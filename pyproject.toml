@@ -5,8 +5,8 @@ build-backend = "uv_build"
 [project]
 name = "hanzo"
 version = "0.1.0"
-description = "A ninja-based PEP517 build backend"
-keywords = ["packaging", "wheel", "pep517"]
+description = "A small, extensible build backend for Python"
+keywords = ["packaging", "wheel", "pep517", "pep660"]
 readme = "README.md"
 license = "Apache-2.0"
 
