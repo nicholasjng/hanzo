@@ -1,0 +1,11 @@
+# build artifact folders
+dist/
+build/
+
+# Python-specific stuff
+__pycache__
+.venv
+*.egg-info
+
+# macOS-specific stuff
+.DS_Store

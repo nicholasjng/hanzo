@@ -1,0 +1,24 @@
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[project]
+name = "hanzo"
+version = "0.1.0"
+description = "A ninja-based PEP517 build backend"
+keywords = ["packaging", "wheel", "pep517"]
+readme = "README.md"
+license = "Apache-2.0"
+
+requires-python = ">=3.12"  # TODO: Consider relaxing this (Path.walk())?
+dependencies = ["packaging"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Enable pycodestyle errors & warnings (`E`, `W`), bandit (`S`), Pyflakes (`F`),
+# isort (`I`), and pyupgrade (`UP`) by default.
+select = ["E", "F", "I", "S", "W", "UP"]
