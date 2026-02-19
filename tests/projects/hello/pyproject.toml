@@ -1,0 +1,11 @@
+[build-system]
+requires = ["hanzo"]
+build-backend = "hanzo"
+
+[project]
+name = "hello"
+version = "0.1.0"
+
+
+[tool.uv.sources]
+hanzo = {path = "../.."}
