@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hanzo"]
+build-backend = "hanzo"
+
+[project]
+name = "hello"
+version = "0.1.0"
+
+
+[tool.uv.sources]
+hanzo = {path = "../.."}
+
+[tool.hanzo.targets.nanobind]
+type = "cc-library"
+rootpath = "@site/nanobind"
+sources = [
+    { include = ["src/*.cpp", "src/*.h"], exclude = ["src/nb_combined.cpp"] }
+]
+headers = [ "include/**/*.h" ]  # TODO: Supply current Python headers
+flags = [
+    "-fPIC",
+    "-fvisibility=hidden",
+    "-fno-strict-aliasing",
+]
+defines = ["-Py_LIMITED_API=0x030C0000"]  # TODO: Supplant by stable-abi switch
+ldflags = [
+    "-Wl,@@rootpath/cmake/darwin-ld-cpython.sym",
+    "-Wl,-x",
+    "-Wl,-S",
+    "-Wl,-dead_strip",
+]
+
+[tool.hanzo.targets.hello_ext]
+type = "ext-module"
+sources = ["src/hello.cc"]
+dependencies = ["nanobind"]
