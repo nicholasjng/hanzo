@@ -8,4 +8,4 @@ version = "0.1.0"
 
 
 [tool.uv.sources]
-hanzo = {path = "../.."}
+hanzo = {path = "../../.."}
