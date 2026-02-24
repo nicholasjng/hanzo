@@ -86,9 +86,7 @@ def get_requires_for_build_sdist(
 def prepare_metadata_for_build_wheel(
     metadata_directory: str | os.PathLike[str],
     config_settings: dict[str, str] | None = None,
-) -> None:
-    print(f"{metadata_directory = }")
-    print(f"{config_settings = }")
+) -> None: ...
 
 
 # PEP 660 editable hooks

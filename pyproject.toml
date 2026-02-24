@@ -13,10 +13,15 @@ license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = ["packaging"]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.15.2",
+]
+
 [tool.ruff]
 src = ["src"]
 line-length = 100
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 # Enable pycodestyle errors & warnings (`E`, `W`), bandit (`S`), Pyflakes (`F`),
