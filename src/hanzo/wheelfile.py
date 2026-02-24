@@ -23,7 +23,7 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator
 from contextlib import ExitStack
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import Message
 from email.policy import EmailPolicy
 from io import BytesIO, StringIO, UnsupportedOperation
@@ -43,7 +43,7 @@ from packaging.utils import (
 from packaging.version import Version
 
 _exclude_filenames = ("RECORD", "RECORD.jws", "RECORD.p7s")
-_default_timestamp = datetime(1980, 1, 1, tzinfo=timezone.utc)
+_default_timestamp = datetime(1980, 1, 1, tzinfo=UTC)
 _email_policy = EmailPolicy(max_line_length=0, mangle_from_=False, utf8=True)
 
 

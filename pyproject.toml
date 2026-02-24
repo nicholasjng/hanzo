@@ -10,7 +10,7 @@ keywords = ["packaging", "wheel", "pep517", "pep660"]
 readme = "README.md"
 license = "Apache-2.0"
 
-requires-python = ">=3.12"  # TODO: Consider relaxing this (Path.walk())?
+requires-python = ">=3.11"
 dependencies = ["packaging"]
 
 [tool.ruff]

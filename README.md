@@ -7,7 +7,7 @@ This is not production-ready software, use with caution.
 
 ## Requirements
 
-The only hard requirement is Python 3.12+.
+The only hard requirement is Python 3.11+.
 When building an extensions, both ninja and any tools used in its constituting build rules must also be installed.
 
 ## Installation
