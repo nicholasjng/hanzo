@@ -1,3 +1,4 @@
+import contextlib
 import os
 import site
 from collections.abc import Iterable
@@ -7,6 +8,31 @@ from typing import Any, Required, Self, TypedDict, cast, overload
 
 SITE_ID = "@site"
 ROOTPATH_ID = "@rootpath"
+
+"""Ninja rule definitions in Python."""
+
+# TODO: Instead of string templates, use actual Python rule classes later.
+cc_compile = """
+rule cc
+  depfile = $depfile
+  deps = gcc
+  command = {compiler} $defines $includes $flags -MD -MT $out -MF $depfile -o $out -c $in
+  description = Building C++ object $out
+"""
+
+cc_linkstatic = """
+rule cc-linkstatic
+  command = $pre_link && rm -f $target_file && {archiver} $target_file $linkflags $in && {ranlib} $target_file && touch $target_file && $post_build
+  description = Linking C++ static library $target_file
+  restat = $restat
+"""
+
+cc_linkshared = """
+rule cc_linkshared
+  command = $pre_link && {compiler} $cflags $archflags $ldflags -o $target_file $in $link_path $link_libraries && $post_build
+  description = Linking C++ shared module $target_file
+  restat = $restat
+"""
 
 
 class GlobDict(TypedDict, total=False):
@@ -30,6 +56,7 @@ class FileGlob:
                     results.append(p)
             else:
                 path, pattern = Path(p[:star]), p[star:]
+                # paths are relative to cwd, so use with chdir().
                 for res in path.glob(pattern):
                     res = str(res)
                     if res not in self.exclude:
@@ -87,7 +114,7 @@ class CCLibraryTarget(Target):
         (site_packages,) = site.getsitepackages()
         self.rootpath = substitute(rootpath, SITE_ID, site_packages)
         self.sources = self.collect_sources(sources)
-        self.includes = self.process_includes(includes or [], self.rootpath)
+        self.includes = self.process_includes(includes or [])
         self.defines = self.process_defines(defines or [])
         self.flags = self.process_flags(flags or [], str(self.rootpath))
         self.ldflags = self.process_flags(ldflags or [], str(self.rootpath))
@@ -104,7 +131,8 @@ class CCLibraryTarget(Target):
                 results.append(item)
             else:
                 g = FileGlob(**item)
-                results.extend(g.resolve())
+                with contextlib.chdir(self.rootpath):
+                    results.extend(g.resolve())
         return results
 
     def process_defines(self, defines: list[str]) -> list[str]:
@@ -119,5 +147,13 @@ class CCLibraryTarget(Target):
             results.append(str(f))
         return results
 
-    def process_includes(self, includes: list[str], rootpath: Path) -> list[str]:
-        return [str(rootpath / i) for i in includes]
+    def process_includes(self, includes: list[str]) -> list[str]:
+        return [str(self.rootpath / i) for i in includes]
+
+    @property
+    def rules(self) -> dict[str, str]:
+        return {
+            "cc_compile": cc_compile,
+            "cc_linkstatic": cc_linkstatic,
+            "cc_linkshared": cc_linkshared,
+        }
