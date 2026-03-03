@@ -53,13 +53,14 @@ class CppToolchain(Toolchain):
         return ("macos",)
 
     def to_dict(self) -> dict[str, str]:
-        return self.__dict__
+        # strip leading underscore off all private field names.
+        return {k[1:]: v for k, v in self.__dict__.items()}
 
 
 CppHostToolchain = CppToolchain(
     name="host",
     compiler="/usr/bin/c++",
     linker="/usr/bin/c++",
-    archiver="/usr/bin/ar cr",
+    archiver="/usr/bin/ar rcs",
     ranlib="/usr/bin/ranlib",
 )
