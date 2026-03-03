@@ -1,10 +1,12 @@
 import functools
 import tomllib
 from pathlib import Path
-from typing import TypedDict, Any
+from typing import Any, TypedDict
 
 from packaging.utils import NormalizedName, canonicalize_name
 from packaging.version import Version
+
+from hanzo.targets import _BUILTIN_TARGETS, Target
 
 
 class ProjectSettings(TypedDict):
@@ -30,8 +32,22 @@ def parse_project_settings() -> ProjectSettings:
     }
     return project_settings
 
+
 def parse_hanzo_settings() -> dict[str, Any]:
     pyproject = parse_pyproject()
     hanzo_info = pyproject.get("tool", {}).get("hanzo", {})
     return hanzo_info
 
+
+@functools.lru_cache(maxsize=1)
+def get_extensions() -> list[Target]:
+    hanzo_settings = parse_hanzo_settings()
+    exts: dict[str, dict[str, Any]] = hanzo_settings.get("targets", {})
+    targets: list[Target] = []
+
+    for name, config in exts.items():
+        config["name"] = name
+        target_type: str = config.pop("type")
+        targets.append(_BUILTIN_TARGETS[target_type].from_toml(config))
+
+    return targets
