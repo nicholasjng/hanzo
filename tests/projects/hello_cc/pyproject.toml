@@ -1,28 +1,29 @@
 [build-system]
-requires = ["hanzo"]
+requires = ["hanzo", "nanobind"]
 build-backend = "hanzo"
 
 [project]
-name = "hello"
+name = "hello-cc"
 version = "0.1.0"
 
 
 [tool.uv.sources]
-hanzo = {path = "../../.."}
+hanzo = { path = "../../..", editable = true }
 
 [tool.hanzo.targets.nanobind]
 type = "cc-library"
 rootpath = "@site/nanobind"
 sources = [
-    { include = ["src/*.cpp"], exclude = ["src/nb_combined.cpp"] }
+    { include = ["src/*.cpp", "src/*.h"], exclude = ["src/nb_combined.cpp"] }
 ]
-includes = [ "include", "ext/robin-map/include" ]  # TODO: Supply current Python headers
+includes = [ "include", "ext/robin_map/include", "@python_headers"]
 flags = [
+    "-std=c++17",  # TODO: Set standard in hanzo top-level C++ settings
     "-fPIC",
     "-fvisibility=hidden",
     "-fno-strict-aliasing",
 ]
-defines = ["Py_LIMITED_API=0x030C0000"]  # TODO: Supplant by stable-abi switch
+# defines = ["Py_LIMITED_API=0x030C0000"]  # TODO: Supplant by stable-abi switch
 ldflags = [
     "-Wl,@@rootpath/cmake/darwin-ld-cpython.sym",
     "-Wl,-x",
@@ -31,6 +32,7 @@ ldflags = [
 ]
 
 [tool.hanzo.targets.hello_ext]
-type = "ext-module"
-sources = ["src/hello.cc"]
+type = "cc-library"
+sources = ["src/hello_ext.cc"]
 dependencies = ["nanobind"]
+# TODO: Force shared linkage through switch
