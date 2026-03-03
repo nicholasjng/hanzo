@@ -1,38 +1,21 @@
+"""Ninja rule definitions in Python."""
+
 import contextlib
 import os
+import shutil
 import site
-from collections.abc import Iterable
+import sysconfig
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Required, Self, TypedDict, cast, overload
+from types import MappingProxyType
+from typing import Any, Required, Self, TypedDict
+
+from .rules import cc_compile, cc_linkshared, cc_linkstatic
 
 SITE_ID = "@site"
 ROOTPATH_ID = "@rootpath"
-
-"""Ninja rule definitions in Python."""
-
-# TODO: Instead of string templates, use actual Python rule classes later.
-cc_compile = """
-rule cc
-  depfile = $depfile
-  deps = gcc
-  command = {compiler} $defines $includes $flags -MD -MT $out -MF $depfile -o $out -c $in
-  description = Building C++ object $out
-"""
-
-cc_linkstatic = """
-rule cc-linkstatic
-  command = $pre_link && rm -f $target_file && {archiver} $target_file $linkflags $in && {ranlib} $target_file && touch $target_file && $post_build
-  description = Linking C++ static library $target_file
-  restat = $restat
-"""
-
-cc_linkshared = """
-rule cc_linkshared
-  command = $pre_link && {compiler} $cflags $archflags $ldflags -o $target_file $in $link_path $link_libraries && $post_build
-  description = Linking C++ shared module $target_file
-  restat = $restat
-"""
+PYTHON_HEADERS_ID = "@python-headers"
 
 
 class GlobDict(TypedDict, total=False):
@@ -67,62 +50,40 @@ class FileGlob:
         return results
 
 
-@overload
-def substitute(path: str | os.PathLike[str], sentinel: str, value: str) -> Path: ...
-
-
-@overload
-def substitute(
-    path: str | os.PathLike[str], sentinel: Iterable[str], value: Iterable[str]
-) -> Path: ...
-
-
-def substitute(
-    path: str | os.PathLike[str], sentinel: str | Iterable[str], value: str | Iterable[str]
-) -> Path:
+def substitute(path: str | os.PathLike[str], replacements: dict[str, str]) -> Path:
     spath = str(path)
-    if isinstance(sentinel, str):
-        value = cast(str, value)
-        spath = spath.replace(sentinel, value)
-    else:
-        for s, v in zip(sentinel, value):
-            spath = spath.replace(s, v)
-    return Path(str(path))
+    for k, v in replacements.items():
+        spath = spath.replace(k, v)
+    return Path(spath)
 
 
 class Target:
-    def __init__(self, name: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        sources: list[str | GlobDict],
+        rootpath: str | os.PathLike[str] | None = None,
+        dependencies: list["Target"] | None = None,
+    ) -> None:
         self._name = name
+        self._sources = sources
+
+        (site_packages,) = site.getsitepackages()
+        rootpath = substitute(rootpath or Path.cwd(), {SITE_ID: site_packages})
+        self._rootpath = Path(rootpath)
+        self._dependencies = dependencies or []
 
     @property
     def name(self) -> str:
         return self._name
 
+    @property
+    def root(self) -> Path:
+        return self._rootpath
 
-class CCLibraryTarget(Target):
-    def __init__(
-        self,
-        name: str,
-        rootpath: str | os.PathLike[str],
-        sources: list[str | GlobDict],
-        includes: list[str] | None = None,
-        defines: list[str] | None = None,
-        flags: list[str] | None = None,
-        ldflags: list[str] | None = None,
-    ):
-        super().__init__(name)
-        (site_packages,) = site.getsitepackages()
-        self.rootpath = substitute(rootpath, SITE_ID, site_packages)
-        self.sources = self.collect_sources(sources)
-        self.includes = self.process_includes(includes or [])
-        self.defines = self.process_defines(defines or [])
-        self.flags = self.process_flags(flags or [], str(self.rootpath))
-        self.ldflags = self.process_flags(ldflags or [], str(self.rootpath))
-
-    @classmethod
-    def from_toml(cls, toml: dict[str, Any]) -> Self: ...
-
-    def to_string(self, toolchain, rules: list[str]) -> str: ...
+    @property
+    def sources(self) -> list[str]:
+        return self.collect_sources(self._sources)
 
     def collect_sources(self, sources: list[str | GlobDict]) -> list[str]:
         results: list[str] = []
@@ -131,9 +92,52 @@ class CCLibraryTarget(Target):
                 results.append(item)
             else:
                 g = FileGlob(**item)
-                with contextlib.chdir(self.rootpath):
+                with contextlib.chdir(self._rootpath):
                     results.extend(g.resolve())
         return results
+
+    def copy(self, target_dir: str | os.PathLike[str]) -> Self:
+        target_dir = Path(target_dir)
+        for src in self.sources:
+            # TODO: Be less wasteful in creating the dirs here
+            build_path = target_dir / Path(src)
+            build_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.root / src, build_path)
+
+        self._rootpath = target_dir
+        return self
+
+    @classmethod
+    def from_toml(cls, toml: dict[str, Any]) -> Self:
+        return cls(**toml)
+
+    @property
+    def rules(self) -> Mapping[str, str]: ...
+
+    def build_outputs(
+        self, ninja_dir: str | os.PathLike[str] | None = None
+    ) -> list[dict]: ...  # TODO: Make this typing more precise
+
+
+class CCLibraryTarget(Target):
+    def __init__(
+        self,
+        name: str,
+        sources: list[str | GlobDict],
+        rootpath: str | os.PathLike[str] | None = None,
+        includes: list[str] | None = None,
+        dependencies: list["CCLibraryTarget"] | None = None,
+        defines: list[str] | None = None,
+        flags: list[str] | None = None,
+        ldflags: list[str] | None = None,
+    ):
+        super().__init__(name, sources, rootpath)
+
+        self.includes = self.process_includes(includes or [])
+        self.defines = self.process_defines(defines or [])
+        self.dependencies = dependencies or []
+        self.flags = self.process_flags(flags or [], str(self._rootpath))
+        self.ldflags = self.process_flags(ldflags or [], str(self._rootpath))
 
     def process_defines(self, defines: list[str]) -> list[str]:
         return [d if d.startswith("-D") else "-D" + d for d in defines]
@@ -143,17 +147,75 @@ class CCLibraryTarget(Target):
     def process_flags(self, flags: list[str], rootpath: str) -> list[str]:
         results: list[str] = []
         for f in flags:
-            f = substitute(f, ROOTPATH_ID, rootpath)
+            f = substitute(f, {ROOTPATH_ID: rootpath})
             results.append(str(f))
         return results
 
     def process_includes(self, includes: list[str]) -> list[str]:
-        return [str(self.rootpath / i) for i in includes]
+        # TODO: Give third-party includes as -isystem based on a heuristic.
+        results = []
+        for i in includes:
+            if i.startswith("@"):
+                i = substitute(i, {PYTHON_HEADERS_ID: sysconfig.get_paths()["include"]})
+            else:
+                i = str(self.root / i)
+            results.append(f"-I{i}")
+        return results
 
     @property
-    def rules(self) -> dict[str, str]:
-        return {
-            "cc_compile": cc_compile,
-            "cc_linkstatic": cc_linkstatic,
-            "cc_linkshared": cc_linkshared,
+    def rules(self) -> Mapping[str, str]:
+        return MappingProxyType(
+            {
+                "cc": cc_compile,
+                "cc_linkstatic": cc_linkstatic,
+                "cc_linkshared": cc_linkshared,
+            }
+        )
+
+    def build_outputs(self, ninja_dir: str | os.PathLike[str] | None = None) -> list[dict]:
+        _targets = []
+        _objfiles: list[str] = []
+        ninja_dir = ninja_dir or self.root
+        for src in self.sources:
+            psrc = (self.root / src).relative_to(ninja_dir)
+            if psrc.suffix == ".h":
+                # header files don't need compiling.
+                continue
+
+            variables: list[tuple[str, str | list[str]]] = [
+                ("depfile", str(psrc.with_suffix(psrc.suffix + ".o.d"))),
+                ("includes", self.includes),
+                ("defines", self.defines),
+                ("flags", self.flags),
+            ]
+
+            _objfile = str(psrc.with_suffix(psrc.suffix + ".o"))
+            _objfiles.append(_objfile)
+            target: dict[str, Any] = {
+                "outputs": _objfile,
+                "rule": "cc",
+                "inputs": [str(psrc)],
+                "variables": variables,
+            }
+
+            _targets.append(target)
+
+        # TODO: Support shared linkage of libnanobind
+        libname = "lib" + self.name + ".a"
+        libtarget = {
+            "outputs": libname,
+            "rule": "cc-linkstatic",
+            "inputs": _objfiles,
+            "variables": [
+                ("target_file", libname),
+                ("pre_link", ":"),  # ":" is a placeholder for noop
+                ("post_build", ":"),
+                ("restat", "1"),
+            ],
         }
+        _targets.append(libtarget)
+
+        return _targets
+
+
+_BUILTIN_TARGETS: dict[str, type[Target]] = {"cc-library": CCLibraryTarget}
