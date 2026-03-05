@@ -30,7 +30,7 @@ from io import BytesIO, StringIO, UnsupportedOperation
 from os import PathLike
 from pathlib import Path, PurePath
 from types import TracebackType
-from typing import IO, NamedTuple, Self
+from typing import IO, NamedTuple, Self, cast
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 from packaging.tags import Tag
@@ -129,9 +129,9 @@ class WheelArchiveFile:
 
     def __exit__(
         self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self._fp.close()
 
@@ -203,9 +203,9 @@ class WheelReader:
 
     def __exit__(
         self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self._zip.close()
         self._record_entries.clear()
@@ -398,9 +398,9 @@ class WheelWriter:
 
     def __exit__(
         self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         try:
             if not exc_type:
@@ -479,6 +479,8 @@ class WheelWriter:
                 fp.write(contents)
                 hash_ = hashlib.new(self.hash_algorithm, contents)
             else:
+                # contents must be a bytefile descriptor as per the if-block above.
+                contents = cast(IO[bytes], contents)
                 try:
                     st = os.stat(contents.fileno())
                 except (AttributeError, UnsupportedOperation):
