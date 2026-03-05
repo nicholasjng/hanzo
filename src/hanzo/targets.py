@@ -2,7 +2,6 @@
 
 import contextlib
 import os
-import shutil
 import site
 import sysconfig
 from collections.abc import Mapping
@@ -15,7 +14,7 @@ from .rules import cc_compile, cc_linkshared, cc_linkstatic
 
 SITE_ID = "@site"
 ROOTPATH_ID = "@rootpath"
-PYTHON_HEADERS_ID = "@python-headers"
+PYTHON_HEADERS_ID = "@python_headers"
 
 
 class GlobDict(TypedDict, total=False):
@@ -96,17 +95,6 @@ class Target:
                     results.extend(g.resolve())
         return results
 
-    def copy(self, target_dir: str | os.PathLike[str]) -> Self:
-        target_dir = Path(target_dir)
-        for src in self.sources:
-            # TODO: Be less wasteful in creating the dirs here
-            build_path = target_dir / Path(src)
-            build_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(self.root / src, build_path)
-
-        self._rootpath = target_dir
-        return self
-
     @classmethod
     def from_toml(cls, toml: dict[str, Any]) -> Self:
         return cls(**toml)
@@ -114,9 +102,7 @@ class Target:
     @property
     def rules(self) -> Mapping[str, str]: ...
 
-    def build_outputs(
-        self, ninja_dir: str | os.PathLike[str] | None = None
-    ) -> list[dict]: ...  # TODO: Make this typing more precise
+    def build_outputs(self) -> list[dict]: ...  # TODO: Make this typing more precise
 
 
 class CCLibraryTarget(Target):
@@ -172,29 +158,29 @@ class CCLibraryTarget(Target):
             }
         )
 
-    def build_outputs(self, ninja_dir: str | os.PathLike[str] | None = None) -> list[dict]:
+    def build_outputs(self) -> list[dict]:
         _targets = []
         _objfiles: list[str] = []
-        ninja_dir = ninja_dir or self.root
         for src in self.sources:
-            psrc = (self.root / src).relative_to(ninja_dir)
-            if psrc.suffix == ".h":
+            input = self.root / src
+            output = Path(self.name) / src
+            if output.suffix == ".h":
                 # header files don't need compiling.
                 continue
 
             variables: list[tuple[str, str | list[str]]] = [
-                ("depfile", str(psrc.with_suffix(psrc.suffix + ".o.d"))),
+                ("depfile", str(output.with_suffix(output.suffix + ".o.d"))),
                 ("includes", self.includes),
                 ("defines", self.defines),
                 ("flags", self.flags),
             ]
 
-            _objfile = str(psrc.with_suffix(psrc.suffix + ".o"))
+            _objfile = str(output.with_suffix(output.suffix + ".o"))
             _objfiles.append(_objfile)
             target: dict[str, Any] = {
                 "outputs": _objfile,
                 "rule": "cc",
-                "inputs": [str(psrc)],
+                "inputs": [str(input)],
                 "variables": variables,
             }
 
