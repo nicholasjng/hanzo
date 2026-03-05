@@ -116,6 +116,7 @@ class CCLibraryTarget(Target):
         defines: list[str] | None = None,
         flags: list[str] | None = None,
         ldflags: list[str] | None = None,
+        libname: str | None = None,
     ):
         super().__init__(name, sources, rootpath)
 
@@ -124,6 +125,7 @@ class CCLibraryTarget(Target):
         self.dependencies = dependencies or []
         self.flags = self.process_flags(flags or [], str(self._rootpath))
         self.ldflags = self.process_flags(ldflags or [], str(self._rootpath))
+        self.libname = libname or "lib" + self.name + ".a"  # TODO: Support shared linkage.
 
     def process_defines(self, defines: list[str]) -> list[str]:
         return [d if d.startswith("-D") else "-D" + d for d in defines]
@@ -186,14 +188,12 @@ class CCLibraryTarget(Target):
 
             _targets.append(target)
 
-        # TODO: Support shared linkage of libnanobind
-        libname = "lib" + self.name + ".a"
         libtarget = {
-            "outputs": libname,
+            "outputs": self.libname,
             "rule": "cc-linkstatic",
             "inputs": _objfiles,
             "variables": [
-                ("target_file", libname),
+                ("target_file", self.libname),
                 ("pre_link", ":"),  # ":" is a placeholder for noop
                 ("post_build", ":"),
                 ("restat", "1"),
