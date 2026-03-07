@@ -15,6 +15,7 @@ dependencies = ["packaging"]
 
 [dependency-groups]
 dev = [
+    "pyrefly>=0.55.0",
     "ruff>=0.15.2",
 ]
 
