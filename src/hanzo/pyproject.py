@@ -1,11 +1,14 @@
 import functools
 import tomllib
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, TypedDict
 
 from packaging.utils import NormalizedName, canonicalize_name
 from packaging.version import Version
 
+from hanzo.build_graph import get_build_graph
 from hanzo.targets import _BUILTIN_TARGETS, Target
 
 
@@ -40,14 +43,14 @@ def parse_hanzo_settings() -> dict[str, Any]:
 
 
 @functools.lru_cache(maxsize=1)
-def get_extensions() -> list[Target]:
+def load_extensions() -> Mapping[str, Target]:
     hanzo_settings = parse_hanzo_settings()
     exts: dict[str, dict[str, Any]] = hanzo_settings.get("targets", {})
-    targets: list[Target] = []
 
+    build_graph = get_build_graph()
     for name, config in exts.items():
         config["name"] = name
         target_type: str = config.pop("type")
-        targets.append(_BUILTIN_TARGETS[target_type].from_toml(config))
+        build_graph[name] = _BUILTIN_TARGETS[target_type].from_toml(config)
 
-    return targets
+    return MappingProxyType(build_graph)
