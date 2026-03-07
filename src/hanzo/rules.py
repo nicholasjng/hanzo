@@ -17,8 +17,8 @@ rule cc-linkstatic
 """
 
 cc_linkshared = """
-rule cc_linkshared
-  command = $pre_link && {compiler} $cflags $archflags $ldflags -o $target_file $in $link_path $link_libraries && $post_build
+rule cc-linkshared
+  command = $pre_link && {compiler} $cflags $archflags $linkflags -o $target_file $in $link_path $link_libraries && $post_build
   description = Linking C++ shared module $target_file
   restat = $restat
 """
