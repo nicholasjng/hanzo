@@ -1,6 +1,7 @@
 """Ninja rule definitions in Python."""
 
 import contextlib
+import importlib.machinery
 import os
 import site
 import sysconfig
@@ -8,8 +9,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Required, Self, TypedDict
+from typing import Any, Literal, Required, Self, TypedDict, cast
 
+from .build_graph import get_build_graph
 from .rules import cc_compile, cc_linkshared, cc_linkstatic
 
 SITE_ID = "@site"
@@ -95,8 +97,17 @@ class Target:
                     results.extend(g.resolve())
         return results
 
+    def process_dependencies(self) -> None: ...
+
     @classmethod
     def from_toml(cls, toml: dict[str, Any]) -> Self:
+        build_graph = get_build_graph()
+        deps: list[str] = toml.pop("dependencies", [])
+        targets: list[Target] = []
+        for dep in deps:
+            targets.append(build_graph[dep])
+
+        toml["dependencies"] = targets
         return cls(**toml)
 
     @property
@@ -110,25 +121,44 @@ class CCLibraryTarget(Target):
         self,
         name: str,
         sources: list[str | GlobDict],
+        headers: list[str] | None = None,
         rootpath: str | os.PathLike[str] | None = None,
         includes: list[str] | None = None,
-        dependencies: list["CCLibraryTarget"] | None = None,
+        dependencies: list[Target] | None = None,
         defines: list[str] | None = None,
         flags: list[str] | None = None,
-        ldflags: list[str] | None = None,
+        linkflags: list[str] | None = None,
+        linkmode: Literal["static", "shared"] = "static",
         libname: str | None = None,
     ):
-        super().__init__(name, sources, rootpath)
+        super().__init__(name, sources, rootpath, dependencies)
 
         self.includes = self.process_includes(includes or [])
+        self.headers = self.process_includes(headers or []) or self.includes
         self.defines = self.process_defines(defines or [])
-        self.dependencies = dependencies or []
         self.flags = self.process_flags(flags or [], str(self._rootpath))
-        self.ldflags = self.process_flags(ldflags or [], str(self._rootpath))
-        self.libname = libname or "lib" + self.name + ".a"  # TODO: Support shared linkage.
+        self.linkflags = self.process_flags(linkflags or [], str(self._rootpath))
+        self.linkmode = linkmode
+        self._libname = libname
+
+    @property
+    def libname(self) -> str:
+        if self._libname is not None:
+            return self._libname
+        else:
+            suffix = ".a" if self.linkmode == "static" else ".so"
+            return "lib" + self.name + suffix
 
     def process_defines(self, defines: list[str]) -> list[str]:
         return [d if d.startswith("-D") else "-D" + d for d in defines]
+
+    def process_dependencies(self) -> None:
+        # only other CCLibraryTargets are allowed
+        for dep in cast(list[Self], self._dependencies):
+            self.includes += dep.headers
+            self.defines += dep.defines
+            self.linkflags += dep.linkflags
+            self.flags += dep.flags
 
     # TODO: Use some kind of context object instead of just rootpath to interpolate flags
     # (important later when selecting flag sets based on compilation environment)
@@ -161,6 +191,8 @@ class CCLibraryTarget(Target):
         )
 
     def build_outputs(self) -> list[dict]:
+        self.process_dependencies()
+
         _targets = []
         _objfiles: list[str] = []
         for src in self.sources:
@@ -188,20 +220,76 @@ class CCLibraryTarget(Target):
 
             _targets.append(target)
 
+        linkstatic = self.linkmode == "static"
+        libnames = [dep.libname for dep in cast(list[Self], self._dependencies)]
+        variables: list[tuple[str, str | list[str]]] = [
+            ("target_file", self.libname),
+            ("pre_link", ":"),  # ":" is a placeholder for noop
+            ("post_build", ":"),
+            ("restat", "1"),
+        ]
+        if not linkstatic:
+            variables.append(("linkflags", self.linkflags))
+            variables.append(("link_libraries", libnames))
+
         libtarget = {
             "outputs": self.libname,
-            "rule": "cc-linkstatic",
+            "rule": "cc-linkstatic" if linkstatic else "cc-linkshared",
             "inputs": _objfiles,
-            "variables": [
-                ("target_file", self.libname),
-                ("pre_link", ":"),  # ":" is a placeholder for noop
-                ("post_build", ":"),
-                ("restat", "1"),
-            ],
+            "variables": variables,
+            "implicit": libnames,
+            "order_only": libnames,
         }
-        _targets.append(libtarget)
 
+        _targets.append(libtarget)
         return _targets
 
 
-_BUILTIN_TARGETS: dict[str, type[Target]] = {"cc-library": CCLibraryTarget}
+class CCExtensionTarget(CCLibraryTarget):
+    def __init__(
+        self,
+        name: str,
+        sources: list[str | GlobDict],
+        rootpath: str | os.PathLike[str] | None = None,
+        includes: list[str] | None = None,
+        headers: list[str] | None = None,
+        dependencies: list[Target] | None = None,
+        defines: list[str] | None = None,
+        flags: list[str] | None = None,
+        linkflags: list[str] | None = None,
+        linkmode: Literal["static", "shared"] = "shared",
+        libname: str | None = None,
+    ):
+        if linkmode != "shared":
+            raise ValueError("Python extensions have to be shared libraries")
+
+        super().__init__(
+            name=name,
+            sources=sources,
+            headers=headers,
+            rootpath=rootpath,
+            includes=includes,
+            dependencies=dependencies,
+            defines=defines,
+            flags=flags,
+            linkflags=linkflags,
+            linkmode=linkmode,
+            libname=libname,
+        )
+
+    @property
+    def libname(self) -> str:
+        if self._libname is not None:
+            return self._libname
+        else:
+            ext_suffixes = importlib.machinery.EXTENSION_SUFFIXES
+            # TODO: Make decision based on hanzo extension abi settings.
+            # first is non-abi3 extension, second is abi3.
+            suffix = ext_suffixes[0] if False else ext_suffixes[1]
+            return self.name + suffix
+
+
+_BUILTIN_TARGETS: dict[str, type[Target]] = {
+    "cc-library": CCLibraryTarget,
+    "cc-extension": CCExtensionTarget,
+}
