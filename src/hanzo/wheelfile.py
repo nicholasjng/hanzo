@@ -42,6 +42,8 @@ from packaging.utils import (
 )
 from packaging.version import Version
 
+from hanzo.utils import to_snakecase
+
 _exclude_filenames = ("RECORD", "RECORD.jws", "RECORD.p7s")
 _default_timestamp = datetime(1980, 1, 1, tzinfo=UTC)
 _email_policy = EmailPolicy(max_line_length=0, mangle_from_=False, utf8=True)
@@ -387,8 +389,9 @@ class WheelWriter:
         elif hash_algorithm in ("md5", "sha1"):
             raise ValueError(f"Weak hash algorithm ({hash_algorithm}) is not permitted by PEP 427")
 
-        self._dist_info_dir = f"{self.metadata.name}-{self.metadata.version}.dist-info"
-        self._data_dir = f"{self.metadata.name}-{self.metadata.version}.data"
+        project_name = to_snakecase(self.metadata.name)
+        self._dist_info_dir = f"{project_name}-{self.metadata.version}.dist-info"
+        self._data_dir = f"{project_name}-{self.metadata.version}.data"
         self._record_path = f"{self._dist_info_dir}/RECORD"
         self._record_entries: dict[str, WheelRecordEntry] = OrderedDict()
 
