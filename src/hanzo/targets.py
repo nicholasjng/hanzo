@@ -11,12 +11,19 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Required, Self, TypedDict, cast
 
-from .build_graph import get_build_graph
-from .rules import cc_compile, cc_linkshared, cc_linkstatic
+from hanzo.pyproject import parse_hanzo_settings
+from hanzo.rules import cc_compile, cc_linkshared, cc_linkstatic
+from hanzo.utils import calculate_wheel_abi
 
 SITE_ID = "@site"
 ROOTPATH_ID = "@rootpath"
 PYTHON_HEADERS_ID = "@python_headers"
+
+settings = parse_hanzo_settings()
+
+_SABI_MAP: dict[str, str] = {
+    "cp3" + str(minor): hex((3 << 24) + (minor << 16)) for minor in range(1, 16)
+}
 
 
 class GlobDict(TypedDict, total=False):
@@ -101,6 +108,8 @@ class Target:
 
     @classmethod
     def from_toml(cls, toml: dict[str, Any]) -> Self:
+        from hanzo.pyproject import get_build_graph
+
         build_graph = get_build_graph()
         deps: list[str] = toml.pop("dependencies", [])
         targets: list[Target] = []
@@ -150,6 +159,10 @@ class CCLibraryTarget(Target):
             return "lib" + self.name + suffix
 
     def process_defines(self, defines: list[str]) -> list[str]:
+        interpreter, abi = calculate_wheel_abi(settings, pure=False)
+        if abi == "abi3":
+            defines.append("-DPy_LIMITED_API=" + _SABI_MAP[interpreter])
+
         return [d if d.startswith("-D") else "-D" + d for d in defines]
 
     def process_dependencies(self) -> None:

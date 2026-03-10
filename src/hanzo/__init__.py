@@ -5,12 +5,16 @@ from pathlib import Path
 
 from packaging.tags import Tag
 
-from .ninja import NinjaWriter
-from .pyproject import load_extensions, parse_project_settings
-from .targets import CCExtensionTarget
-from .toolchains import CppHostToolchain
-from .utils import to_snakecase
-from .wheelfile import WheelWriter
+from hanzo.ninja import NinjaWriter
+from hanzo.pyproject import (
+    load_extensions,
+    parse_hanzo_settings,
+    parse_project_metadata,
+)
+from hanzo.targets import CCExtensionTarget
+from hanzo.toolchains import CppHostToolchain
+from hanzo.utils import calculate_wheel_abi, to_snakecase
+from hanzo.wheelfile import WheelWriter
 
 __version__ = "0.1.0"
 
@@ -26,29 +30,27 @@ def build_wheel(
     config_settings: dict[str, str] | None = None,
     metadata_directory: str | os.PathLike[str] | None = None,
 ) -> str:
-    settings = parse_project_settings()
+    metadata = parse_project_metadata()
+    settings = parse_hanzo_settings()
+
     wheel_directory = Path(wheel_directory)
     (build_dir := Path.cwd() / BUILD_DIRNAME).mkdir(exist_ok=True)
 
     ext_modules = load_extensions()
     root_is_purelib = not ext_modules
 
+    interpreter, abi = calculate_wheel_abi(settings, pure=root_is_purelib)
     if not root_is_purelib:
-        # TODO: Support pypy and other flavors
-        interpreter = "cp" + sysconfig.get_config_var("py_version_nodot")
-        abi = "abi3"  # TODO: Calculate instead of hardcoding
         _platform = to_snakecase(sysconfig.get_platform())
     else:
-        interpreter = "py3"
-        abi = "none"
         _platform = "any"
 
     tag = Tag(interpreter, abi, _platform)
 
-    project_name = to_snakecase(settings["name"])
+    project_name = to_snakecase(metadata.name)
     wheel_file = wheel_directory / WHEEL_FILENAME.format(
         name=project_name,
-        version=settings["version"],
+        version=metadata.version,
         tag=tag,
     )
 
