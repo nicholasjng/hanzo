@@ -3,18 +3,20 @@ import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any
 
-from packaging.utils import NormalizedName, canonicalize_name
-from packaging.version import Version
+from packaging.metadata import Metadata
 
-from hanzo.build_graph import get_build_graph
-from hanzo.targets import _BUILTIN_TARGETS, Target
+if TYPE_CHECKING:
+    from hanzo.targets import Target
+
+_METADATA_VERSION = "2.5"
+
+_build_graph: dict[str, "Target"] = {}
 
 
-class ProjectSettings(TypedDict):
-    name: NormalizedName
-    version: Version
+def get_build_graph() -> Mapping[str, "Target"]:
+    return MappingProxyType(_build_graph)
 
 
 @functools.lru_cache(maxsize=1)
@@ -26,31 +28,30 @@ def parse_pyproject() -> dict[str, Any]:
     return pyproject
 
 
-def parse_project_settings() -> ProjectSettings:
+def parse_project_metadata() -> Metadata:
     pyproject = parse_pyproject()
     project_info = pyproject["project"]
-    project_settings: ProjectSettings = {
-        "name": canonicalize_name(project_info["name"], validate=True),
-        "version": Version(project_info["version"]),
-    }
-    return project_settings
+    project_info["metadata_version"] = _METADATA_VERSION
+    return Metadata.from_raw(project_info)
 
 
 def parse_hanzo_settings() -> dict[str, Any]:
     pyproject = parse_pyproject()
+    # TODO: Convert this into a typed settings class
     hanzo_info = pyproject.get("tool", {}).get("hanzo", {})
     return hanzo_info
 
 
 @functools.lru_cache(maxsize=1)
-def load_extensions() -> Mapping[str, Target]:
+def load_extensions() -> Mapping[str, "Target"]:
     hanzo_settings = parse_hanzo_settings()
     exts: dict[str, dict[str, Any]] = hanzo_settings.get("targets", {})
 
-    build_graph = get_build_graph()
+    from hanzo.targets import _BUILTIN_TARGETS
+
     for name, config in exts.items():
         config["name"] = name
         target_type: str = config.pop("type")
-        build_graph[name] = _BUILTIN_TARGETS[target_type].from_toml(config)
+        _build_graph[name] = _BUILTIN_TARGETS[target_type].from_toml(config)
 
-    return MappingProxyType(build_graph)
+    return get_build_graph()
