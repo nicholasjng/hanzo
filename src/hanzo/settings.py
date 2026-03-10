@@ -55,3 +55,12 @@ def load_extensions() -> Mapping[str, "Target"]:
         _build_graph[name] = _BUILTIN_TARGETS[target_type].from_toml(config)
 
     return get_build_graph()
+
+
+__all__ = [
+    "get_build_graph",
+    "parse_pyproject",
+    "parse_project_metadata",
+    "parse_hanzo_settings",
+    "load_extensions",
+]

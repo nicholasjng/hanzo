@@ -11,8 +11,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Required, Self, TypedDict, cast
 
-from hanzo.pyproject import parse_hanzo_settings
 from hanzo.rules import cc_compile, cc_linkshared, cc_linkstatic
+from hanzo.settings import parse_hanzo_settings
 from hanzo.utils import calculate_wheel_abi
 
 SITE_ID = "@site"
@@ -108,7 +108,7 @@ class Target:
 
     @classmethod
     def from_toml(cls, toml: dict[str, Any]) -> Self:
-        from hanzo.pyproject import get_build_graph
+        from hanzo.settings import get_build_graph
 
         build_graph = get_build_graph()
         deps: list[str] = toml.pop("dependencies", [])
