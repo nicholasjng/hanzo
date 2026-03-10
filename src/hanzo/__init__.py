@@ -1,3 +1,5 @@
+"""hanzo is a build backend for modern Python based on ninja."""
+
 import os
 import subprocess
 import sysconfig
@@ -6,7 +8,7 @@ from pathlib import Path
 from packaging.tags import Tag
 
 from hanzo.ninja import NinjaWriter
-from hanzo.pyproject import (
+from hanzo.settings import (
     load_extensions,
     parse_hanzo_settings,
     parse_project_metadata,

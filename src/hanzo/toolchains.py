@@ -1,4 +1,11 @@
+import json
 import os
+import subprocess
+import sys
+import sysconfig
+from typing import Self
+
+from packaging.version import Version
 
 
 class Toolchain:
@@ -9,6 +16,13 @@ class Toolchain:
     be able to compile source files to object files, and link object files into
     a library.
     """
+
+    def __init__(self, name: str):
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
 
 
 class CppToolchain(Toolchain):
@@ -22,7 +36,8 @@ class CppToolchain(Toolchain):
         archiver: str | os.PathLike[str],
         ranlib: str | os.PathLike[str],
     ) -> None:
-        self._name = name
+        super().__init__(name=name)
+
         self._compiler = str(compiler)
         self._linker = str(linker)
         self._archiver = str(archiver)
@@ -57,6 +72,66 @@ class CppToolchain(Toolchain):
         return {k[1:]: v for k, v in self.__dict__.items()}
 
 
+class PythonToolchain(Toolchain):
+    """A Python toolchain."""
+
+    def __init__(
+        self,
+        name: str,
+        executable: str,
+    ):
+        super().__init__(name=name)
+
+        self._executable = executable
+
+        if self._executable == sys.executable:
+            paths = sysconfig.get_paths()
+            version = sysconfig.get_config_var("py_version")
+        else:
+            paths = json.loads(
+                subprocess.check_output(  # noqa: S603
+                    [self._executable, "-c", "import sysconfig; print(sysconfig.get_paths())"],
+                    encoding="utf-8",
+                ).replace("'", '"')
+            )
+            version = subprocess.check_output(  # noqa: S603
+                [
+                    self._executable,
+                    "-c",
+                    "import sysconfig; print(sysconfig.get_config_var('py_version'))",
+                ],
+                encoding="utf-8",
+            )
+
+        self._include = paths["include"]
+        self._libdir = paths["stdlib"]
+        self._version = Version(version)
+
+    @classmethod
+    def current(cls) -> Self:
+        return cls(name="current", executable=sys.executable)
+
+    @property
+    def executable(self) -> str:
+        return self._executable
+
+    @property
+    def include(self) -> str:
+        return self._include
+
+    @property
+    def libdir(self) -> str:
+        return self._libdir
+
+    @property
+    def version(self) -> Version:
+        return self._version
+
+    # @property
+    # def ext_suffix(self) -> str:
+    #     return self._ext_suffix
+
+
 CppHostToolchain = CppToolchain(
     name="host",
     compiler="/usr/bin/c++",
@@ -64,3 +139,10 @@ CppHostToolchain = CppToolchain(
     archiver="/usr/bin/ar rcs",
     ranlib="/usr/bin/ranlib",
 )
+
+# TODO: This is not portable to Windows
+PythonHostToolchain = PythonToolchain(
+    name="host",
+    executable="/usr/bin/python3",
+)
+PythonCurrentInterpreterToolchain = PythonToolchain.current()
