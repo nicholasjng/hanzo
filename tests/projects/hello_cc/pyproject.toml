@@ -5,6 +5,8 @@ build-backend = "hanzo"
 [project]
 name = "hello-cc"
 version = "0.1.0"
+keywords = ["hello", "c++"]
+requires-python = ">=3.10"
 
 
 [tool.uv.sources]
@@ -27,7 +29,6 @@ flags = [
     "-fvisibility=hidden",
     "-fno-strict-aliasing",
 ]
-# defines = ["Py_LIMITED_API=0x030C0000"]  # TODO: Supplant by stable-abi switch
 linkflags = [
     "-bundle",
     "-Wl,-headerpad_max_install_names",

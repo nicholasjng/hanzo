@@ -3,14 +3,14 @@ import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from packaging.metadata import Metadata
+from packaging.metadata import Metadata, RawMetadata
+
+from hanzo.constants import METADATA_VERSION
 
 if TYPE_CHECKING:
     from hanzo.targets import Target
-
-_METADATA_VERSION = "2.5"
 
 _build_graph: dict[str, "Target"] = {}
 
@@ -29,9 +29,17 @@ def parse_pyproject() -> dict[str, Any]:
 
 
 def parse_project_metadata() -> Metadata:
+    from packaging.metadata import _EMAIL_TO_RAW_MAPPING
+
     pyproject = parse_pyproject()
     project_info = pyproject["project"]
-    project_info["metadata_version"] = _METADATA_VERSION
+
+    if "metadata-version" not in project_info:
+        project_info["metadata-version"] = METADATA_VERSION
+    # TODO: Error handling in line with metadata
+    project_info: RawMetadata = cast(
+        RawMetadata, {_EMAIL_TO_RAW_MAPPING[k]: v for k, v in project_info.items()}
+    )
     return Metadata.from_raw(project_info)
 
 
@@ -55,12 +63,3 @@ def load_extensions() -> Mapping[str, "Target"]:
         _build_graph[name] = _BUILTIN_TARGETS[target_type].from_toml(config)
 
     return get_build_graph()
-
-
-__all__ = [
-    "get_build_graph",
-    "parse_pyproject",
-    "parse_project_metadata",
-    "parse_hanzo_settings",
-    "load_extensions",
-]

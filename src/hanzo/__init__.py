@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sysconfig
+from datetime import datetime
 from pathlib import Path
 
 from packaging.tags import Tag
@@ -92,18 +93,20 @@ def build_wheel(
     with WheelWriter(wheel_file, generator="hanzo", root_is_purelib=root_is_purelib) as wheel:
         project_path = Path(project_name)
         # step 1: write dist-info
-        wheel.write_metadata([])
+        wheel.write_metadata(metadata)
 
         # TODO: Create a more comprehensive wheel inclusion list with .gitignore and others.
         for dirpath, dirnames, files in os.walk("src"):
             for f in files:
-                wheel.write_file(project_path / f, Path(dirpath) / f)
+                wheel.write_file(project_path / f, Path(dirpath) / f, timestamp=datetime.now())
 
         for file in build_dir.iterdir():
             # TODO: Refine this based on the expected kinds of build artifacts,
             # optimally from settings.
             if file.suffix == ".so":
-                wheel.write_file(project_path / file.name, build_dir / file)
+                wheel.write_file(
+                    project_path / file.name, build_dir / file, timestamp=datetime.now()
+                )
 
     return wheel_file.name
 
