@@ -33,6 +33,7 @@ from types import TracebackType
 from typing import IO, NamedTuple, Self, cast
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
+from packaging.metadata import Metadata
 from packaging.tags import Tag
 from packaging.utils import (
     BuildTag,
@@ -42,6 +43,7 @@ from packaging.utils import (
 )
 from packaging.version import Version
 
+from hanzo.constants import METADATA_VERSION
 from hanzo.utils import to_snakecase
 
 _exclude_filenames = ("RECORD", "RECORD.jws", "RECORD.p7s")
@@ -440,23 +442,29 @@ class WheelWriter:
         )
         self.write_distinfo_file("WHEEL", buffer.getvalue())
 
-    def write_metadata(self, items: Iterable[tuple[str, str]]) -> None:
-        msg = Message(policy=_email_policy)
-        for key, value in items:
-            key = key.title()
-            if key == "Description":
-                msg.set_payload(value.encode("utf-8"))
-            else:
-                msg.add_header(key, value)
+    def write_metadata(
+        self, items: Metadata | Iterable[tuple[str, str]], timestamp: datetime = _default_timestamp
+    ) -> None:
+        if isinstance(items, Metadata):
+            msg = items.as_rfc822()
+        else:
+            # TODO: Remove this if no longer necessary.
+            msg = Message(policy=_email_policy)
+            for key, value in items:
+                key = key.title()
+                if key == "Description":
+                    msg.set_payload(value.encode("utf-8"))
+                else:
+                    msg.add_header(key, value)
 
-        if "Metadata-Version" not in msg:
-            msg["Metadata-Version"] = "2.4"
-        if "Name" not in msg:
-            msg["Name"] = self.metadata.name
-        if "Version" not in msg:
-            msg["Version"] = str(self.metadata.version)
+            if "Metadata-Version" not in msg:
+                msg["Metadata-Version"] = METADATA_VERSION
+            if "Name" not in msg:
+                msg["Name"] = self.metadata.name
+            if "Version" not in msg:
+                msg["Version"] = str(self.metadata.version)
 
-        self.write_distinfo_file("METADATA", msg.as_bytes())
+        self.write_distinfo_file("METADATA", msg.as_bytes(), timestamp=timestamp)
 
     def write_file(
         self,
