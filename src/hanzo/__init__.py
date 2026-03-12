@@ -33,7 +33,7 @@ def build_wheel(
     metadata_directory: str | os.PathLike[str] | None = None,
 ) -> str:
     metadata = parse_project_metadata()
-    settings = parse_hanzo_settings()
+    settings = parse_hanzo_settings(config_settings)
 
     wheel_directory = Path(wheel_directory)
     (build_dir := Path.cwd() / BUILD_DIRNAME).mkdir(exist_ok=True)
