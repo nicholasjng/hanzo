@@ -1,12 +1,22 @@
+import enum
 import json
 import os
 import subprocess
 import sys
 import sysconfig
 import types
-from typing import Self
+from typing import Literal, Self, overload
 
 from packaging.version import Version
+
+
+class ToolchainNotFoundError(Exception):
+    pass
+
+
+class ToolchainType(enum.StrEnum):
+    CC = "cc"
+    PYTHON = "python"
 
 
 class Toolchain:
@@ -167,6 +177,24 @@ _py_toolchains: dict[str, PythonToolchain] = {
 py_toolchains = types.MappingProxyType(_py_toolchains)
 
 
+@overload
+def get_toolchain(name: str, typ: Literal[ToolchainType.CC]) -> CcToolchain: ...
+
+
+@overload
+def get_toolchain(name: str, typ: Literal[ToolchainType.PYTHON]) -> PythonToolchain: ...
+
+
+def get_toolchain(name: str, typ: ToolchainType) -> Toolchain:
+    try:
+        if typ == ToolchainType.CC:
+            return cc_toolchains[name]
+        elif typ == ToolchainType.PYTHON:
+            return py_toolchains[name]
+    except KeyError:
+        raise ToolchainNotFoundError(f"no {typ} toolchain named {name!r}") from None
+
+
 __all__ = [
     "Toolchain",
     "CcToolchain",
@@ -175,4 +203,5 @@ __all__ = [
     "PythonCurrentInterpreterToolchain",
     "cc_toolchains",
     "py_toolchains",
+    "get_toolchain",
 ]
