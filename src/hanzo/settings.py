@@ -11,8 +11,8 @@ from hanzo.constants import DEFAULT_CC_TOOLCHAIN_NAME, DEFAULT_PY_TOOLCHAIN_NAME
 from hanzo.toolchains import (
     CcToolchain,
     PythonToolchain,
-    cc_toolchains,
-    py_toolchains,
+    ToolchainType,
+    get_toolchain,
 )
 
 if TYPE_CHECKING:
@@ -28,6 +28,7 @@ def get_build_graph() -> Mapping[str, "Target"]:
 class HanzoSettings:
     _cc: CcToolchain
     _py: PythonToolchain
+    _features: list[str]
 
     stable_abi: str | None
 
@@ -35,11 +36,16 @@ class HanzoSettings:
     def from_dict(cls, d: dict[str, Any]) -> Self:
         """Hydrates the class with toolchains from PEP517 config settings."""
         ins = cls()
-        cc_toolchain_name: str = d.get("cc-toolchain", DEFAULT_CC_TOOLCHAIN_NAME)
-        py_toolchain_name: str = d.get("python-toolchain", DEFAULT_PY_TOOLCHAIN_NAME)
+        # TODO: Parse these config settings with argparse or similar
+        cc_toolchain_name: str = d.get("--cc-toolchain", DEFAULT_CC_TOOLCHAIN_NAME)
+        py_toolchain_name: str = d.get("--python-toolchain", DEFAULT_PY_TOOLCHAIN_NAME)
+        features: list[str] = d.get("--features", [])
         stable_abi: str | None = d.get("stable-abi", None)
-        ins._cc = cc_toolchains[cc_toolchain_name]
-        ins._py = py_toolchains[py_toolchain_name]
+
+        # assigns private instance variables with parsed values.
+        ins._cc = get_toolchain(cc_toolchain_name, ToolchainType.CC)
+        ins._py = get_toolchain(py_toolchain_name, ToolchainType.PYTHON)
+        ins._features = features
         ins.stable_abi = stable_abi
         return ins
 
@@ -50,6 +56,10 @@ class HanzoSettings:
     @property
     def python(self) -> PythonToolchain:
         return self._py
+
+    @property
+    def features(self) -> list[str]:
+        return self._features
 
 
 @functools.lru_cache(maxsize=1)
@@ -76,11 +86,11 @@ def parse_project_metadata() -> Metadata:
     return Metadata.from_raw(project_info)
 
 
-@functools.lru_cache(maxsize=1)
-def parse_hanzo_settings() -> HanzoSettings:
+def parse_hanzo_settings(config_settings: dict[str, str] | None = None) -> HanzoSettings:
     pyproject = parse_pyproject()
     # TODO: Convert this into a typed settings class
     hanzo_info = pyproject.get("tool", {}).get("hanzo", {})
+    hanzo_info |= config_settings or {}
     return HanzoSettings.from_dict(hanzo_info)
 
 
