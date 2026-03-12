@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import sysconfig
+import types
 from typing import Self
 
 from packaging.version import Version
@@ -25,7 +26,7 @@ class Toolchain:
         return self._name
 
 
-class CppToolchain(Toolchain):
+class CcToolchain(Toolchain):
     """An implementation of a C++ toolchain."""
 
     def __init__(
@@ -105,6 +106,7 @@ class PythonToolchain(Toolchain):
 
         self._include = paths["include"]
         self._libdir = paths["stdlib"]
+        self._site = paths["platlib"]
         self._version = Version(version)
 
     @classmethod
@@ -124,6 +126,10 @@ class PythonToolchain(Toolchain):
         return self._libdir
 
     @property
+    def site(self) -> str:
+        return self._site
+
+    @property
     def version(self) -> Version:
         return self._version
 
@@ -132,7 +138,7 @@ class PythonToolchain(Toolchain):
     #     return self._ext_suffix
 
 
-CppHostToolchain = CppToolchain(
+CcHostToolchain = CcToolchain(
     name="host",
     compiler="/usr/bin/c++",
     linker="/usr/bin/c++",
@@ -146,3 +152,27 @@ PythonHostToolchain = PythonToolchain(
     executable="/usr/bin/python3",
 )
 PythonCurrentInterpreterToolchain = PythonToolchain.current()
+
+
+# read-write and read-only name->toolchain mapping for C++.
+_cc_toolchains: dict[str, CcToolchain] = {
+    "host": CcHostToolchain,
+}
+cc_toolchains = types.MappingProxyType(_cc_toolchains)
+
+# read-write and read-only name->toolchain mappings for Python.
+_py_toolchains: dict[str, PythonToolchain] = {
+    "current": PythonCurrentInterpreterToolchain,
+}
+py_toolchains = types.MappingProxyType(_py_toolchains)
+
+
+__all__ = [
+    "Toolchain",
+    "CcToolchain",
+    "PythonToolchain",
+    "CcHostToolchain",
+    "PythonCurrentInterpreterToolchain",
+    "cc_toolchains",
+    "py_toolchains",
+]
