@@ -17,12 +17,12 @@ stable-abi = ">=3.12"
 
 [tool.hanzo.targets.nanobind]
 type = "cc-library"
-rootpath = "@site/nanobind"
+rootpath = "@python.site/nanobind"
 sources = [
     { include = ["src/*.cpp", "src/*.h"], exclude = ["src/nb_combined.cpp"] }
 ]
-headers = ["include", "@python_headers"]
-includes = [ "include", "ext/robin_map/include", "@python_headers"]
+headers = ["include", "@python.include"]
+includes = [ "include", "ext/robin_map/include", "@python.include"]
 flags = [
     "-std=c++17",  # TODO: Set standard in hanzo top-level C++ settings
     "-fPIC",

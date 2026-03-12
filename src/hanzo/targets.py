@@ -2,28 +2,26 @@
 
 import contextlib
 import importlib.machinery
+import operator
 import os
-import site
-import sysconfig
-from collections.abc import Mapping
+import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Required, Self, TypedDict, cast
 
 from hanzo.rules import cc_compile, cc_linkshared, cc_linkstatic
-from hanzo.settings import parse_hanzo_settings
+from hanzo.settings import HanzoSettings, parse_hanzo_settings
 from hanzo.utils import calculate_wheel_abi
-
-SITE_ID = "@site"
-ROOTPATH_ID = "@rootpath"
-PYTHON_HEADERS_ID = "@python_headers"
 
 settings = parse_hanzo_settings()
 
 _SABI_MAP: dict[str, str] = {
     "cp3" + str(minor): hex((3 << 24) + (minor << 16)) for minor in range(1, 16)
 }
+
+Processor = Callable[[str, HanzoSettings], str]
 
 
 class GlobDict(TypedDict, total=False):
@@ -58,11 +56,28 @@ class FileGlob:
         return results
 
 
-def substitute(path: str | os.PathLike[str], replacements: dict[str, str]) -> Path:
+def substitute(
+    path: str | os.PathLike[str],
+    settings: HanzoSettings,
+    root: str | os.PathLike[str] | None = None,
+) -> Path:
+    # TODO: Get "root" into the settings somehow, or make a derivative context type.
+
+    def _interpolate(matchobj: re.Match) -> str:
+        # strip away the "@" marker in front.
+        var = matchobj.group(0)[1:]
+        if var == "rootpath":  # TODO: Make this less hacky
+            if root is None:
+                raise ValueError("could not substitute @rootpath")
+            return str(root)
+        getter = operator.attrgetter(var)
+        return str(getter(settings))
+
     spath = str(path)
-    for k, v in replacements.items():
-        spath = spath.replace(k, v)
-    return Path(spath)
+    attr_regex = re.compile(r"(@[a-zA-Z_][a-zA-Z0-9_.]*)")
+
+    res = attr_regex.sub(_interpolate, spath)
+    return Path(res)
 
 
 class Target:
@@ -75,10 +90,7 @@ class Target:
     ) -> None:
         self._name = name
         self._sources = sources
-
-        (site_packages,) = site.getsitepackages()
-        rootpath = substitute(rootpath or Path.cwd(), {SITE_ID: site_packages})
-        self._rootpath = Path(rootpath)
+        self._rootpath = substitute(rootpath or Path.cwd(), settings)
         self._dependencies = dependencies or []
 
     @property
@@ -178,7 +190,7 @@ class CCLibraryTarget(Target):
     def process_flags(self, flags: list[str], rootpath: str) -> list[str]:
         results: list[str] = []
         for f in flags:
-            f = substitute(f, {ROOTPATH_ID: rootpath})
+            f = substitute(f, settings, self._rootpath)
             results.append(str(f))
         return results
 
@@ -187,7 +199,7 @@ class CCLibraryTarget(Target):
         results = []
         for i in includes:
             if i.startswith("@"):
-                i = substitute(i, {PYTHON_HEADERS_ID: sysconfig.get_paths()["include"]})
+                i = substitute(i, settings, self._rootpath)
             else:
                 i = str(self.root / i)
             results.append(f"-I{i}")
