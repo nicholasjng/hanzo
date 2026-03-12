@@ -3,11 +3,17 @@ import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from packaging.metadata import Metadata, RawMetadata
 
-from hanzo.constants import METADATA_VERSION
+from hanzo.constants import DEFAULT_CC_TOOLCHAIN_NAME, DEFAULT_PY_TOOLCHAIN_NAME, METADATA_VERSION
+from hanzo.toolchains import (
+    CcToolchain,
+    PythonToolchain,
+    cc_toolchains,
+    py_toolchains,
+)
 
 if TYPE_CHECKING:
     from hanzo.targets import Target
@@ -17,6 +23,33 @@ _build_graph: dict[str, "Target"] = {}
 
 def get_build_graph() -> Mapping[str, "Target"]:
     return MappingProxyType(_build_graph)
+
+
+class HanzoSettings:
+    _cc: CcToolchain
+    _py: PythonToolchain
+
+    stable_abi: str | None
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> Self:
+        """Hydrates the class with toolchains from PEP517 config settings."""
+        ins = cls()
+        cc_toolchain_name: str = d.get("cc-toolchain", DEFAULT_CC_TOOLCHAIN_NAME)
+        py_toolchain_name: str = d.get("python-toolchain", DEFAULT_PY_TOOLCHAIN_NAME)
+        stable_abi: str | None = d.get("stable-abi", None)
+        ins._cc = cc_toolchains[cc_toolchain_name]
+        ins._py = py_toolchains[py_toolchain_name]
+        ins.stable_abi = stable_abi
+        return ins
+
+    @property
+    def cc(self) -> CcToolchain:
+        return self._cc
+
+    @property
+    def python(self) -> PythonToolchain:
+        return self._py
 
 
 @functools.lru_cache(maxsize=1)
@@ -43,17 +76,19 @@ def parse_project_metadata() -> Metadata:
     return Metadata.from_raw(project_info)
 
 
-def parse_hanzo_settings() -> dict[str, Any]:
+@functools.lru_cache(maxsize=1)
+def parse_hanzo_settings() -> HanzoSettings:
     pyproject = parse_pyproject()
     # TODO: Convert this into a typed settings class
     hanzo_info = pyproject.get("tool", {}).get("hanzo", {})
-    return hanzo_info
+    return HanzoSettings.from_dict(hanzo_info)
 
 
 @functools.lru_cache(maxsize=1)
 def load_extensions() -> Mapping[str, "Target"]:
-    hanzo_settings = parse_hanzo_settings()
-    exts: dict[str, dict[str, Any]] = hanzo_settings.get("targets", {})
+    pyproject = parse_pyproject()
+    # TODO: Should this move into the settings?
+    exts: dict[str, dict[str, Any]] = pyproject.get("tool", {}).get("hanzo", {}).get("targets", {})
 
     from hanzo.targets import _BUILTIN_TARGETS
 
