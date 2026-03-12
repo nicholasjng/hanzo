@@ -15,7 +15,6 @@ from hanzo.settings import (
     parse_project_metadata,
 )
 from hanzo.targets import CCExtensionTarget
-from hanzo.toolchains import CppHostToolchain
 from hanzo.utils import calculate_wheel_abi, to_snakecase
 from hanzo.wheelfile import WheelWriter
 
@@ -71,7 +70,7 @@ def build_wheel(
                 for rule in ext.rules.values():
                     if rule not in ruleset:
                         # TODO: Use the proper .rule() API once there is a class
-                        ninja._line(rule.format(**CppHostToolchain.to_dict()))
+                        ninja._line(rule.format(**settings.cc.to_dict()))
                         ruleset.add(rule)
 
                 for out in ext.build_outputs():
@@ -92,7 +91,8 @@ def build_wheel(
 
     with WheelWriter(wheel_file, generator="hanzo", root_is_purelib=root_is_purelib) as wheel:
         project_path = Path(project_name)
-        # step 1: write dist-info
+        # step 1: create dist-info dir, write metadata into it.
+        # TODO: Move into prepare_metadata
         wheel.write_metadata(metadata)
 
         # TODO: Create a more comprehensive wheel inclusion list with .gitignore and others.
@@ -132,7 +132,15 @@ def get_requires_for_build_sdist(
 def prepare_metadata_for_build_wheel(
     metadata_directory: str | os.PathLike[str],
     config_settings: dict[str, str] | None = None,
-) -> None: ...
+) -> None:
+    """Creates a .dist-info directory for the project, and writes metadata files into it
+    (METADATA, RECORD, WHEEL).
+
+    Currently, all metadata is handled in build_wheel(), so this function does nothing.
+
+    TODO: Implement metadata writing in this hook, and just call it within build_wheel().
+    """
+    pass
 
 
 # PEP 660 editable hooks
@@ -142,15 +150,24 @@ def build_editable(
     wheel_directory: str | os.PathLike[str],
     config_settings: dict[str, str] | None = None,
     metadata_directory: str | os.PathLike[str] | None = None,
-) -> str: ...
+) -> str:
+    return build_wheel(
+        wheel_directory=wheel_directory,
+        config_settings=config_settings,
+        metadata_directory=metadata_directory,
+    )
 
 
 def get_requires_for_build_editable(
     config_settings: dict[str, str] | None = None,
-) -> list[str]: ...
+) -> list[str]:
+    return []
 
 
 def prepare_metadata_for_build_editable(
     metadata_directory: str | os.PathLike[str],
     config_settings: dict[str, str] | None = None,
-) -> None: ...
+) -> None:
+    prepare_metadata_for_build_wheel(
+        metadata_directory=metadata_directory, config_settings=config_settings
+    )
