@@ -56,6 +56,12 @@ class FileGlob:
         return results
 
 
+class IncludeDict(TypedDict, total=False):
+    path: Required[str]
+    system: bool
+    local: bool
+
+
 @dataclass(frozen=True)
 class Include:
     path: str | os.PathLike[str]
@@ -65,6 +71,12 @@ class Include:
     def __str__(self) -> str:
         prefix = "-isystem" if self.system else "-I"
         return prefix + Path(self.path).as_posix()
+
+
+class DefineDict(TypedDict, total=False):
+    name: Required[str]
+    value: str | int | bool | None
+    local: bool
 
 
 @dataclass(frozen=True)
@@ -87,12 +99,11 @@ class Define:
         return cls(name, val)
 
     def __str__(self) -> str:
+        sdefine = "-D" + self.name
         if isinstance(self.value, bool | None):
-            return "-D" + self.name
-        elif isinstance(self.value, int):
-            return "-D" + "=" + str(self.value)
+            return sdefine
         else:
-            return "-D" + self.name + "=" + self.value
+            return sdefine + "=" + str(self.value)
 
 
 def substitute(
@@ -119,6 +130,18 @@ def substitute(
     return Path(res)
 
 
+def collect(sources: list[str | GlobDict], cwd: str | os.PathLike[str]) -> list[str]:
+    results: list[str] = []
+    for item in sources:
+        if isinstance(item, str):
+            results.append(item)
+        else:
+            g = FileGlob(**item)
+            with contextlib.chdir(cwd):
+                results.extend(g.resolve())
+    return results
+
+
 class Target:
     def __init__(
         self,
@@ -128,8 +151,8 @@ class Target:
         dependencies: list["Target"] | None = None,
     ) -> None:
         self._name = name
-        self._sources = sources
         self._rootpath = substitute(rootpath or Path.cwd(), settings)
+        self._sources = collect(sources, self._rootpath)
         self._dependencies = dependencies or []
 
     @property
@@ -142,18 +165,7 @@ class Target:
 
     @property
     def sources(self) -> list[str]:
-        return self.collect_sources(self._sources)
-
-    def collect_sources(self, sources: list[str | GlobDict]) -> list[str]:
-        results: list[str] = []
-        for item in sources:
-            if isinstance(item, str):
-                results.append(item)
-            else:
-                g = FileGlob(**item)
-                with contextlib.chdir(self._rootpath):
-                    results.extend(g.resolve())
-        return results
+        return self._sources
 
     def process_dependencies(self) -> None: ...
 
@@ -181,11 +193,10 @@ class CCLibraryTarget(Target):
         self,
         name: str,
         sources: list[str | GlobDict],
-        headers: list[str] | None = None,
         rootpath: str | os.PathLike[str] | None = None,
-        includes: list[str] | None = None,
+        includes: list[str | IncludeDict] | None = None,
         dependencies: list[Target] | None = None,
-        defines: list[str] | None = None,
+        defines: list[str | DefineDict] | None = None,
         flags: list[str] | None = None,
         linkflags: list[str] | None = None,
         linkmode: Literal["static", "shared"] = "static",
@@ -193,34 +204,46 @@ class CCLibraryTarget(Target):
     ):
         super().__init__(name, sources, rootpath, dependencies)
 
+        # TODO: Move these methods out of class
         self.includes = self.process_includes(includes or [])
-        self.headers = self.process_includes(headers or []) or self.includes
         self.defines = self.process_defines(defines or [])
         self.flags = self.process_flags(flags or [], str(self._rootpath))
         self.linkflags = self.process_flags(linkflags or [], str(self._rootpath))
         self.linkmode = linkmode
-        self._libname = libname
+
+        if libname is not None:
+            self._libname = libname
+        else:
+            suffix = ".a" if linkmode == "static" else ".so"
+            self._libname = "lib" + self.name + suffix
 
     @property
     def libname(self) -> str:
-        if self._libname is not None:
-            return self._libname
-        else:
-            suffix = ".a" if self.linkmode == "static" else ".so"
-            return "lib" + self.name + suffix
+        return self._libname
 
-    def process_defines(self, defines: list[str]) -> list[str]:
+    @property
+    def headers(self) -> list[Include]:
+        return [inc for inc in self.includes if not inc.local]
+
+    def process_defines(self, defines: list[str | DefineDict]) -> list[Define]:
+        defs: list[Define] = []
+        # TODO: Pack this into a feature
         interpreter, abi = calculate_wheel_abi(settings, pure=False)
         if abi == "abi3":
             defines.append("-DPy_LIMITED_API=" + _SABI_MAP[interpreter])
 
-        return [d if d.startswith("-D") else "-D" + d for d in defines]
+        for define in defines:
+            if isinstance(define, str):
+                defs.append(Define.from_literal(define))
+            else:
+                defs.append(Define(**define))
+        return defs
 
     def process_dependencies(self) -> None:
         # only other CCLibraryTargets are allowed
         for dep in cast(list[Self], self._dependencies):
             self.includes += dep.headers
-            self.defines += dep.defines
+            self.defines += [_d for _d in dep.defines if not _d.local]
             self.linkflags += dep.linkflags
             self.flags += dep.flags
 
@@ -229,19 +252,23 @@ class CCLibraryTarget(Target):
     def process_flags(self, flags: list[str], rootpath: str) -> list[str]:
         results: list[str] = []
         for f in flags:
-            f = substitute(f, settings, self._rootpath)
+            f = substitute(f, settings, self.root)
             results.append(str(f))
         return results
 
-    def process_includes(self, includes: list[str]) -> list[str]:
-        # TODO: Give third-party includes as -isystem based on a heuristic.
-        results = []
-        for i in includes:
-            if i.startswith("@"):
-                i = substitute(i, settings, self._rootpath)
+    def process_includes(self, includes: list[str | IncludeDict]) -> list[Include]:
+        results: list[Include] = []
+        for inc in includes:
+            if isinstance(inc, str):
+                # TODO: Substitute, then prepend self.root if not absolute
+                if inc.startswith("@"):
+                    path = substitute(inc, settings, self.root)
+                else:
+                    path = str(self.root / inc)
+                results.append(Include(path))
             else:
-                i = str(self.root / i)
-            results.append(f"-I{i}")
+                inc["path"] = str(self.root / inc["path"])
+                results.append(Include(**inc))
         return results
 
     @property
@@ -268,8 +295,8 @@ class CCLibraryTarget(Target):
 
             variables: list[tuple[str, str | list[str]]] = [
                 ("depfile", str(output.with_suffix(output.suffix + ".o.d"))),
-                ("includes", self.includes),
-                ("defines", self.defines),
+                ("includes", list(map(str, self.includes))),
+                ("defines", list(map(str, self.defines))),
                 ("flags", self.flags),
             ]
 
@@ -315,10 +342,9 @@ class CCExtensionTarget(CCLibraryTarget):
         name: str,
         sources: list[str | GlobDict],
         rootpath: str | os.PathLike[str] | None = None,
-        includes: list[str] | None = None,
-        headers: list[str] | None = None,
+        includes: list[str | IncludeDict] | None = None,
         dependencies: list[Target] | None = None,
-        defines: list[str] | None = None,
+        defines: list[str | DefineDict] | None = None,
         flags: list[str] | None = None,
         linkflags: list[str] | None = None,
         linkmode: Literal["static", "shared"] = "shared",
@@ -327,10 +353,16 @@ class CCExtensionTarget(CCLibraryTarget):
         if linkmode != "shared":
             raise ValueError("Python extensions have to be shared libraries")
 
+        if libname is None:
+            ext_suffixes = importlib.machinery.EXTENSION_SUFFIXES
+            # TODO: Make decision based on hanzo extension abi settings.
+            # first is non-abi3 extension, second is abi3.
+            suffix = ext_suffixes[0] if not settings.stable_abi else ext_suffixes[1]
+            libname = name + suffix
+
         super().__init__(
             name=name,
             sources=sources,
-            headers=headers,
             rootpath=rootpath,
             includes=includes,
             dependencies=dependencies,
@@ -340,17 +372,6 @@ class CCExtensionTarget(CCLibraryTarget):
             linkmode=linkmode,
             libname=libname,
         )
-
-    @property
-    def libname(self) -> str:
-        if self._libname is not None:
-            return self._libname
-        else:
-            ext_suffixes = importlib.machinery.EXTENSION_SUFFIXES
-            # TODO: Make decision based on hanzo extension abi settings.
-            # first is non-abi3 extension, second is abi3.
-            suffix = ext_suffixes[0] if False else ext_suffixes[1]
-            return self.name + suffix
 
 
 _BUILTIN_TARGETS: dict[str, type[Target]] = {
