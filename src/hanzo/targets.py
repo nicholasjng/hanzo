@@ -56,6 +56,45 @@ class FileGlob:
         return results
 
 
+@dataclass(frozen=True)
+class Include:
+    path: str | os.PathLike[str]
+    system: bool = False
+    local: bool = False
+
+    def __str__(self) -> str:
+        prefix = "-isystem" if self.system else "-I"
+        return prefix + Path(self.path).as_posix()
+
+
+@dataclass(frozen=True)
+class Define:
+    name: str
+    value: str | int | bool | None = None
+    local: bool = False
+
+    @classmethod
+    def from_literal(cls, lit: str) -> Self:
+        if lit.startswith("-D"):
+            lit = lit[2:]
+
+        try:
+            name, val = lit.split("=", 1)
+        except ValueError:
+            # true-ish define like -DNDEBUG
+            name, val = lit, True
+        # if you want a local define, use a TOML struct.
+        return cls(name, val)
+
+    def __str__(self) -> str:
+        if isinstance(self.value, bool | None):
+            return "-D" + self.name
+        elif isinstance(self.value, int):
+            return "-D" + "=" + str(self.value)
+        else:
+            return "-D" + self.name + "=" + self.value
+
+
 def substitute(
     path: str | os.PathLike[str],
     settings: HanzoSettings,
