@@ -6,109 +6,24 @@ import operator
 import os
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, Required, Self, TypedDict, cast
+from typing import Any, Literal, Self, cast
 
 from hanzo.rules import cc_compile, cc_linkshared, cc_linkstatic
-from hanzo.settings import HanzoSettings, parse_hanzo_settings
-from hanzo.utils import calculate_wheel_abi
-
-settings = parse_hanzo_settings()
+from hanzo.settings import BuildConfig
+from hanzo.types import Define, DefineDict, FileGlob, GlobDict, Include, IncludeDict
 
 _SABI_MAP: dict[str, str] = {
     "cp3" + str(minor): hex((3 << 24) + (minor << 16)) for minor in range(1, 16)
 }
 
-Processor = Callable[[str, HanzoSettings], str]
-
-
-class GlobDict(TypedDict, total=False):
-    include: Required[list[str]]
-    exclude: list[str]
-    allow_empty: bool
-
-
-@dataclass(frozen=True)
-class FileGlob:
-    include: list[str]
-    exclude: list[str] = field(default_factory=list)
-    allow_empty: bool = False
-
-    def resolve(self) -> list[str]:
-        results: list[str] = []
-        for p in self.include:
-            star = p.find("*")
-            if star == -1:
-                if p not in self.exclude:
-                    results.append(p)
-            else:
-                path, pattern = Path(p[:star]), p[star:]
-                # paths are relative to cwd, so use with chdir().
-                for res in path.glob(pattern):
-                    res = str(res)
-                    if res not in self.exclude:
-                        results.append(res)
-        if not results and not self.allow_empty:
-            raise ValueError(f"glob pattern {self.include} did not yield any results")
-
-        return results
-
-
-class IncludeDict(TypedDict, total=False):
-    path: Required[str]
-    system: bool
-    local: bool
-
-
-@dataclass(frozen=True)
-class Include:
-    path: str | os.PathLike[str]
-    system: bool = False
-    local: bool = False
-
-    def __str__(self) -> str:
-        prefix = "-isystem" if self.system else "-I"
-        return prefix + Path(self.path).as_posix()
-
-
-class DefineDict(TypedDict, total=False):
-    name: Required[str]
-    value: str | int | bool | None
-    local: bool
-
-
-@dataclass(frozen=True)
-class Define:
-    name: str
-    value: str | int | bool | None = None
-    local: bool = False
-
-    @classmethod
-    def from_literal(cls, lit: str) -> Self:
-        if lit.startswith("-D"):
-            lit = lit[2:]
-
-        try:
-            name, val = lit.split("=", 1)
-        except ValueError:
-            # true-ish define like -DNDEBUG
-            name, val = lit, True
-        # if you want a local define, use a TOML struct.
-        return cls(name, val)
-
-    def __str__(self) -> str:
-        sdefine = "-D" + self.name
-        if isinstance(self.value, bool | None):
-            return sdefine
-        else:
-            return sdefine + "=" + str(self.value)
+Processor = Callable[[str, BuildConfig], str]
 
 
 def substitute(
     path: str | os.PathLike[str],
-    settings: HanzoSettings,
+    config: BuildConfig,
     root: str | os.PathLike[str] | None = None,
 ) -> Path:
     # TODO: Get "root" into the settings somehow, or make a derivative context type.
@@ -121,7 +36,7 @@ def substitute(
                 raise ValueError("could not substitute @rootpath")
             return str(root)
         getter = operator.attrgetter(var)
-        return str(getter(settings))
+        return str(getter(config))
 
     spath = str(path)
     attr_regex = re.compile(r"(@[a-zA-Z_][a-zA-Z0-9_.]*)")
@@ -147,13 +62,15 @@ class Target:
         self,
         name: str,
         sources: list[str | GlobDict],
+        config: BuildConfig,
         rootpath: str | os.PathLike[str] | None = None,
         dependencies: list["Target"] | None = None,
     ) -> None:
         self._name = name
-        self._rootpath = substitute(rootpath or Path.cwd(), settings)
+        self._rootpath = substitute(rootpath or Path.cwd(), config)
         self._sources = collect(sources, self._rootpath)
         self._dependencies = dependencies or []
+        self._config = config
 
     @property
     def name(self) -> str:
@@ -166,6 +83,10 @@ class Target:
     @property
     def sources(self) -> list[str]:
         return self._sources
+
+    @property
+    def config(self) -> BuildConfig:
+        return self._config
 
     def process_dependencies(self) -> None: ...
 
@@ -193,16 +114,18 @@ class CCLibraryTarget(Target):
         self,
         name: str,
         sources: list[str | GlobDict],
+        config: BuildConfig,
         rootpath: str | os.PathLike[str] | None = None,
-        includes: list[str | IncludeDict] | None = None,
         dependencies: list[Target] | None = None,
+        features: list[str] | None = None,
+        includes: list[str | IncludeDict] | None = None,
         defines: list[str | DefineDict] | None = None,
         flags: list[str] | None = None,
         linkflags: list[str] | None = None,
         linkmode: Literal["static", "shared"] = "static",
         libname: str | None = None,
     ):
-        super().__init__(name, sources, rootpath, dependencies)
+        super().__init__(name, sources, config, rootpath, dependencies)
 
         # TODO: Move these methods out of class
         self.includes = self.process_includes(includes or [])
@@ -226,12 +149,11 @@ class CCLibraryTarget(Target):
         return [inc for inc in self.includes if not inc.local]
 
     def process_defines(self, defines: list[str | DefineDict]) -> list[Define]:
+        # # TODO: Pack this into a feature
+        # interpreter, abi = calculate_wheel_abi(settings, pure=False)
+        # if abi == "abi3":
+        #     defines.append("-DPy_LIMITED_API=" + _SABI_MAP[interpreter])
         defs: list[Define] = []
-        # TODO: Pack this into a feature
-        interpreter, abi = calculate_wheel_abi(settings, pure=False)
-        if abi == "abi3":
-            defines.append("-DPy_LIMITED_API=" + _SABI_MAP[interpreter])
-
         for define in defines:
             if isinstance(define, str):
                 defs.append(Define.from_literal(define))
@@ -240,6 +162,15 @@ class CCLibraryTarget(Target):
         return defs
 
     def process_dependencies(self) -> None:
+        # TODO: This has to be called on construction of the build graph.
+        # only other CCLibraryTargets are allowed
+        for dep in cast(list[Self], self._dependencies):
+            self.includes += dep.headers
+            self.defines += [_d for _d in dep.defines if not _d.local]
+            self.linkflags += dep.linkflags
+            self.flags += dep.flags
+
+    def process_features(self) -> None:
         # only other CCLibraryTargets are allowed
         for dep in cast(list[Self], self._dependencies):
             self.includes += dep.headers
@@ -252,7 +183,7 @@ class CCLibraryTarget(Target):
     def process_flags(self, flags: list[str], rootpath: str) -> list[str]:
         results: list[str] = []
         for f in flags:
-            f = substitute(f, settings, self.root)
+            f = substitute(f, self.config, self.root)
             results.append(str(f))
         return results
 
@@ -262,7 +193,7 @@ class CCLibraryTarget(Target):
             if isinstance(inc, str):
                 # TODO: Substitute, then prepend self.root if not absolute
                 if inc.startswith("@"):
-                    path = substitute(inc, settings, self.root)
+                    path = substitute(inc, self.config, self.root)
                 else:
                     path = str(self.root / inc)
                 results.append(Include(path))
@@ -341,9 +272,10 @@ class CCExtensionTarget(CCLibraryTarget):
         self,
         name: str,
         sources: list[str | GlobDict],
+        config: BuildConfig,
         rootpath: str | os.PathLike[str] | None = None,
-        includes: list[str | IncludeDict] | None = None,
         dependencies: list[Target] | None = None,
+        includes: list[str | IncludeDict] | None = None,
         defines: list[str | DefineDict] | None = None,
         flags: list[str] | None = None,
         linkflags: list[str] | None = None,
@@ -357,12 +289,13 @@ class CCExtensionTarget(CCLibraryTarget):
             ext_suffixes = importlib.machinery.EXTENSION_SUFFIXES
             # TODO: Make decision based on hanzo extension abi settings.
             # first is non-abi3 extension, second is abi3.
-            suffix = ext_suffixes[0] if not settings.stable_abi else ext_suffixes[1]
+            suffix = ext_suffixes[0] if True else ext_suffixes[1]
             libname = name + suffix
 
         super().__init__(
             name=name,
             sources=sources,
+            config=config,
             rootpath=rootpath,
             includes=includes,
             dependencies=dependencies,

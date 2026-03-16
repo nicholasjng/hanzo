@@ -10,6 +10,7 @@ from packaging.tags import Tag
 
 from hanzo.ninja import NinjaWriter
 from hanzo.settings import (
+    BuildConfig,
     load_extensions,
     parse_hanzo_settings,
     parse_project_metadata,
@@ -33,15 +34,16 @@ def build_wheel(
     metadata_directory: str | os.PathLike[str] | None = None,
 ) -> str:
     metadata = parse_project_metadata()
-    settings = parse_hanzo_settings(config_settings)
+    settings = parse_hanzo_settings()
+    config = BuildConfig.from_settings(config_settings or {})
 
     wheel_directory = Path(wheel_directory)
     (build_dir := Path.cwd() / BUILD_DIRNAME).mkdir(exist_ok=True)
 
-    ext_modules = load_extensions()
+    ext_modules = load_extensions(config)
     root_is_purelib = not ext_modules
 
-    interpreter, abi = calculate_wheel_abi(settings, pure=root_is_purelib)
+    interpreter, abi = calculate_wheel_abi(settings.wheel.stable_abi, pure=root_is_purelib)
     if not root_is_purelib:
         _platform = to_snakecase(sysconfig.get_platform())
     else:
@@ -70,7 +72,7 @@ def build_wheel(
                 for rule in ext.rules.values():
                     if rule not in ruleset:
                         # TODO: Use the proper .rule() API once there is a class
-                        ninja._line(rule.format(**settings.cc.to_dict()))
+                        ninja._line(rule.format(**config.cc.to_dict()))
                         ruleset.add(rule)
 
                 for out in ext.build_outputs():
