@@ -1,10 +1,10 @@
-import enum
 import json
 import os
 import subprocess
 import sys
 import sysconfig
 import types
+from enum import StrEnum, auto
 from typing import Literal, Self, overload
 
 from packaging.version import Version
@@ -14,9 +14,9 @@ class ToolchainNotFoundError(Exception):
     pass
 
 
-class ToolchainType(enum.StrEnum):
-    CC = "cc"
-    PYTHON = "python"
+class ToolchainType(StrEnum):
+    CC = auto()
+    PYTHON = auto()
 
 
 class Toolchain:
