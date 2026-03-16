@@ -5,7 +5,7 @@ import importlib.machinery
 import operator
 import os
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Self, cast
@@ -17,8 +17,6 @@ from hanzo.types import Define, DefineDict, FileGlob, GlobDict, Include, Include
 _SABI_MAP: dict[str, str] = {
     "cp3" + str(minor): hex((3 << 24) + (minor << 16)) for minor in range(1, 16)
 }
-
-Processor = Callable[[str, BuildConfig], str]
 
 
 def substitute(
@@ -64,12 +62,11 @@ class Target:
         sources: list[str | GlobDict],
         config: BuildConfig,
         rootpath: str | os.PathLike[str] | None = None,
-        dependencies: list["Target"] | None = None,
     ) -> None:
         self._name = name
         self._rootpath = substitute(rootpath or Path.cwd(), config)
         self._sources = collect(sources, self._rootpath)
-        self._dependencies = dependencies or []
+        self._dependencies: list[Target] = []
         self._config = config
 
     @property
@@ -88,20 +85,10 @@ class Target:
     def config(self) -> BuildConfig:
         return self._config
 
-    def process_dependencies(self) -> None: ...
+    def add_dependency(self, dep: "Target") -> None: ...
 
     @classmethod
-    def from_toml(cls, toml: dict[str, Any]) -> Self:
-        from hanzo.settings import get_build_graph
-
-        build_graph = get_build_graph()
-        deps: list[str] = toml.pop("dependencies", [])
-        targets: list[Target] = []
-        for dep in deps:
-            targets.append(build_graph[dep])
-
-        toml["dependencies"] = targets
-        return cls(**toml)
+    def from_toml(cls, toml: dict[str, Any], config: BuildConfig) -> Self: ...
 
     @property
     def rules(self) -> Mapping[str, str]: ...
@@ -116,22 +103,20 @@ class CCLibraryTarget(Target):
         sources: list[str | GlobDict],
         config: BuildConfig,
         rootpath: str | os.PathLike[str] | None = None,
-        dependencies: list[Target] | None = None,
         features: list[str] | None = None,
-        includes: list[str | IncludeDict] | None = None,
-        defines: list[str | DefineDict] | None = None,
+        includes: list[Include] | None = None,
+        defines: list[Define] | None = None,
         flags: list[str] | None = None,
         linkflags: list[str] | None = None,
         linkmode: Literal["static", "shared"] = "static",
         libname: str | None = None,
     ):
-        super().__init__(name, sources, config, rootpath, dependencies)
+        super().__init__(name, sources, config, rootpath)
 
-        # TODO: Move these methods out of class
-        self.includes = self.process_includes(includes or [])
-        self.defines = self.process_defines(defines or [])
-        self.flags = self.process_flags(flags or [], str(self._rootpath))
-        self.linkflags = self.process_flags(linkflags or [], str(self._rootpath))
+        self.includes = includes or []
+        self.defines = defines or []
+        self.flags = flags or []
+        self.linkflags = linkflags or []
         self.linkmode = linkmode
 
         if libname is not None:
@@ -148,59 +133,65 @@ class CCLibraryTarget(Target):
     def headers(self) -> list[Include]:
         return [inc for inc in self.includes if not inc.local]
 
-    def process_defines(self, defines: list[str | DefineDict]) -> list[Define]:
-        # # TODO: Pack this into a feature
-        # interpreter, abi = calculate_wheel_abi(settings, pure=False)
-        # if abi == "abi3":
-        #     defines.append("-DPy_LIMITED_API=" + _SABI_MAP[interpreter])
-        defs: list[Define] = []
-        for define in defines:
-            if isinstance(define, str):
-                defs.append(Define.from_literal(define))
-            else:
-                defs.append(Define(**define))
-        return defs
+    @classmethod
+    def from_toml(cls, toml: dict[str, Any], config: BuildConfig) -> Self:
+        def _expand_path(path: str | os.PathLike[str], root: str | os.PathLike[str]) -> str:
+            path = substitute(path, config, root)
+            return str(path if path.is_absolute() else root / path)
 
-    def process_dependencies(self) -> None:
-        # TODO: This has to be called on construction of the build graph.
-        # only other CCLibraryTargets are allowed
-        for dep in cast(list[Self], self._dependencies):
-            self.includes += dep.headers
-            self.defines += [_d for _d in dep.defines if not _d.local]
-            self.linkflags += dep.linkflags
-            self.flags += dep.flags
+        parsed_config = toml.copy()
 
-    def process_features(self) -> None:
-        # only other CCLibraryTargets are allowed
-        for dep in cast(list[Self], self._dependencies):
-            self.includes += dep.headers
-            self.defines += [_d for _d in dep.defines if not _d.local]
-            self.linkflags += dep.linkflags
-            self.flags += dep.flags
+        rootpath: str | os.PathLike[str] = toml.get("rootpath", Path.cwd())
+        rootpath = substitute(rootpath, config)
+        raw_includes: list[str | IncludeDict] = toml.get("includes", [])
+        raw_defines: list[str | DefineDict] = toml.get("defines", [])
+        raw_flags: list[str] = toml.get("flags", [])
+        raw_ldflags: list[str] = toml.get("linkflags", [])
+        (
+            includes,
+            defines,
+            flags,
+            linkflags,
+        ) = [], [], [], []
 
-    # TODO: Use some kind of context object instead of just rootpath to interpolate flags
-    # (important later when selecting flag sets based on compilation environment)
-    def process_flags(self, flags: list[str], rootpath: str) -> list[str]:
-        results: list[str] = []
-        for f in flags:
-            f = substitute(f, self.config, self.root)
-            results.append(str(f))
-        return results
-
-    def process_includes(self, includes: list[str | IncludeDict]) -> list[Include]:
-        results: list[Include] = []
-        for inc in includes:
+        for inc in raw_includes:
             if isinstance(inc, str):
-                # TODO: Substitute, then prepend self.root if not absolute
-                if inc.startswith("@"):
-                    path = substitute(inc, self.config, self.root)
-                else:
-                    path = str(self.root / inc)
-                results.append(Include(path))
+                path = _expand_path(inc, rootpath)
+                includes.append(Include(path))
             else:
-                inc["path"] = str(self.root / inc["path"])
-                results.append(Include(**inc))
-        return results
+                inc["path"] = _expand_path(inc["path"], rootpath)
+                includes.append(Include(**inc))
+
+        for _def in raw_defines:
+            if isinstance(_def, str):
+                defines.append(Define.from_literal(_def))
+            else:
+                defines.append(Define(**_def))
+
+        for flag in raw_flags:
+            parsed_flag = str(substitute(flag, config, rootpath))
+            flags.append(parsed_flag)
+
+        for flag in raw_ldflags:
+            parsed_flag = str(substitute(flag, config, rootpath))
+            linkflags.append(parsed_flag)
+
+        parsed_config |= dict(includes=includes, defines=defines, flags=flags, linkflags=linkflags)
+        inst = cls(**parsed_config)
+        return inst
+
+    def add_dependency(self, dep: Target) -> None:
+        # only other CCLibraryTargets are allowed
+        # TODO: If unable to restrict typing, go loud and throw errors here.
+        dep = cast(Self, dep)
+        self._dependencies.append(dep)
+        self.includes += dep.headers
+        self.defines += [_d for _d in dep.defines if not _d.local]
+        self.linkflags += dep.linkflags
+        self.flags += dep.flags
+
+    def add_features(self, features: set) -> None:
+        pass
 
     @property
     def rules(self) -> Mapping[str, str]:
@@ -213,8 +204,6 @@ class CCLibraryTarget(Target):
         )
 
     def build_outputs(self) -> list[dict]:
-        self.process_dependencies()
-
         _targets = []
         _objfiles: list[str] = []
         for src in self.sources:
@@ -274,9 +263,8 @@ class CCExtensionTarget(CCLibraryTarget):
         sources: list[str | GlobDict],
         config: BuildConfig,
         rootpath: str | os.PathLike[str] | None = None,
-        dependencies: list[Target] | None = None,
-        includes: list[str | IncludeDict] | None = None,
-        defines: list[str | DefineDict] | None = None,
+        includes: list[Include] | None = None,
+        defines: list[Define] | None = None,
         flags: list[str] | None = None,
         linkflags: list[str] | None = None,
         linkmode: Literal["static", "shared"] = "shared",
@@ -298,7 +286,6 @@ class CCExtensionTarget(CCLibraryTarget):
             config=config,
             rootpath=rootpath,
             includes=includes,
-            dependencies=dependencies,
             defines=defines,
             flags=flags,
             linkflags=linkflags,

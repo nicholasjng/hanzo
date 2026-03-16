@@ -153,8 +153,16 @@ def load_extensions(config: BuildConfig) -> Mapping[str, "Target"]:
 
     for name, _struct in exts.items():
         _struct["name"] = name
+        # remove pyproject keys responsible for build graph construction...
         target_type: str = _struct.pop("type")
+        deps: list[str] = _struct.pop("dependencies", [])
+        # ... and add config key for interpolating magic values in resources.
         _struct["config"] = config
-        _build_graph[name] = _BUILTIN_TARGETS[target_type].from_toml(_struct)
+
+        target = _BUILTIN_TARGETS[target_type].from_toml(_struct, config)
+        for dep in deps:
+            target.add_dependency(_build_graph[dep])
+
+        _build_graph[name] = target
 
     return get_build_graph()
