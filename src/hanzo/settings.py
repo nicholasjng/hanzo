@@ -1,6 +1,7 @@
 import functools
 import tomllib
 from collections.abc import Mapping
+from dataclasses import MISSING, dataclass, field, fields, is_dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Self, cast
@@ -8,12 +9,14 @@ from typing import TYPE_CHECKING, Any, Self, cast
 from packaging.metadata import Metadata, RawMetadata
 
 from hanzo.constants import DEFAULT_CC_TOOLCHAIN_NAME, DEFAULT_PY_TOOLCHAIN_NAME, METADATA_VERSION
+from hanzo.features import Feature, get_feature
 from hanzo.toolchains import (
     CcToolchain,
     PythonToolchain,
     ToolchainType,
     get_toolchain,
 )
+from hanzo.utils import to_snakecase
 
 if TYPE_CHECKING:
     from hanzo.targets import Target
@@ -25,28 +28,57 @@ def get_build_graph() -> Mapping[str, "Target"]:
     return MappingProxyType(_build_graph)
 
 
-class HanzoSettings:
-    _cc: CcToolchain
-    _py: PythonToolchain
-    _features: list[str]
+@dataclass
+class SdistSettings:
+    pass
 
-    stable_abi: str | None
+
+@dataclass
+class WheelSettings:
+    stable_abi: str | None = None
+
+
+@dataclass
+class PythonSettings:
+    pass
+
+
+@dataclass
+class CcSettings:
+    export_compile_commands: bool = False
+
+
+@dataclass
+class HanzoSettings:
+    sdist: SdistSettings = field(default_factory=SdistSettings)
+    wheel: WheelSettings = field(default_factory=WheelSettings)
+    python: PythonSettings = field(default_factory=PythonSettings)
+    cc: CcSettings = field(default_factory=CcSettings)
+
+
+class BuildConfig:
+    _cc: CcToolchain
+    _python: PythonToolchain
+    _features: set[Feature]
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> Self:
-        """Hydrates the class with toolchains from PEP517 config settings."""
+    def from_settings(cls, config_settings: dict[str, Any]) -> Self:
+        """Hydrates the class with PEP517 config settings."""
         ins = cls()
         # TODO: Parse these config settings with argparse or similar
-        cc_toolchain_name: str = d.get("--cc-toolchain", DEFAULT_CC_TOOLCHAIN_NAME)
-        py_toolchain_name: str = d.get("--python-toolchain", DEFAULT_PY_TOOLCHAIN_NAME)
-        features: list[str] = d.get("--features", [])
-        stable_abi: str | None = d.get("stable-abi", None)
+        cc_toolchain_name: str = config_settings.get("--cc-toolchain", DEFAULT_CC_TOOLCHAIN_NAME)
+        py_toolchain_name: str = config_settings.get(
+            "--python-toolchain", DEFAULT_PY_TOOLCHAIN_NAME
+        )
+
+        features: set[Feature] = {
+            get_feature(name)(name) for name in config_settings.get("--features", [])
+        }
 
         # assigns private instance variables with parsed values.
         ins._cc = get_toolchain(cc_toolchain_name, ToolchainType.CC)
-        ins._py = get_toolchain(py_toolchain_name, ToolchainType.PYTHON)
+        ins._python = get_toolchain(py_toolchain_name, ToolchainType.PYTHON)
         ins._features = features
-        ins.stable_abi = stable_abi
         return ins
 
     @property
@@ -55,11 +87,14 @@ class HanzoSettings:
 
     @property
     def python(self) -> PythonToolchain:
-        return self._py
+        return self._python
 
     @property
-    def features(self) -> list[str]:
+    def features(self) -> set[Feature]:
         return self._features
+
+    def add_builtin_features(settings: HanzoSettings) -> None:
+        pass
 
 
 @functools.lru_cache(maxsize=1)
@@ -86,25 +121,40 @@ def parse_project_metadata() -> Metadata:
     return Metadata.from_raw(project_info)
 
 
-def parse_hanzo_settings(config_settings: dict[str, str] | None = None) -> HanzoSettings:
+def parse_hanzo_settings() -> HanzoSettings:
     pyproject = parse_pyproject()
-    # TODO: Convert this into a typed settings class
     hanzo_info = pyproject.get("tool", {}).get("hanzo", {})
-    hanzo_info |= config_settings or {}
-    return HanzoSettings.from_dict(hanzo_info)
+
+    for field_ in fields(HanzoSettings):
+        block = hanzo_info.pop(field_.name, {})
+        cfg = block
+        if is_dataclass(field_.type):
+            if field_.default_factory is not MISSING:
+                cfg = field_.default_factory()
+                if is_dataclass(cfg):
+                    cfg = replace(cfg, **block)
+                continue
+        elif isinstance(field_.type, type):
+            _normblock = {to_snakecase(k): v for k, v in block.items()}
+            cfg = field_.type(**_normblock)
+
+        hanzo_info[field_.name] = cfg
+
+    return HanzoSettings(hanzo_info)
 
 
 @functools.lru_cache(maxsize=1)
-def load_extensions() -> Mapping[str, "Target"]:
+def load_extensions(config: BuildConfig) -> Mapping[str, "Target"]:
     pyproject = parse_pyproject()
     # TODO: Should this move into the settings?
     exts: dict[str, dict[str, Any]] = pyproject.get("tool", {}).get("hanzo", {}).get("targets", {})
 
     from hanzo.targets import _BUILTIN_TARGETS
 
-    for name, config in exts.items():
-        config["name"] = name
-        target_type: str = config.pop("type")
-        _build_graph[name] = _BUILTIN_TARGETS[target_type].from_toml(config)
+    for name, _struct in exts.items():
+        _struct["name"] = name
+        target_type: str = _struct.pop("type")
+        _struct["config"] = config
+        _build_graph[name] = _BUILTIN_TARGETS[target_type].from_toml(_struct)
 
     return get_build_graph()
