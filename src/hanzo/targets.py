@@ -6,10 +6,12 @@ import operator
 import os
 import re
 from collections.abc import Mapping
+from functools import cached_property
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Self, cast
 
+from hanzo.features import CcFeature, Feature
 from hanzo.rules import cc_compile, cc_linkshared, cc_linkstatic
 from hanzo.settings import BuildConfig
 from hanzo.types import Define, DefineDict, FileGlob, GlobDict, Include, IncludeDict
@@ -87,6 +89,8 @@ class Target:
 
     def add_dependency(self, dep: "Target") -> None: ...
 
+    def add_feature(self, feature: Feature) -> None: ...
+
     @classmethod
     def from_toml(cls, toml: dict[str, Any], config: BuildConfig) -> Self: ...
 
@@ -103,7 +107,6 @@ class CCLibraryTarget(Target):
         sources: list[str | GlobDict],
         config: BuildConfig,
         rootpath: str | os.PathLike[str] | None = None,
-        features: list[str] | None = None,
         includes: list[Include] | None = None,
         defines: list[Define] | None = None,
         flags: list[str] | None = None,
@@ -119,15 +122,15 @@ class CCLibraryTarget(Target):
         self.linkflags = linkflags or []
         self.linkmode = linkmode
 
-        if libname is not None:
-            self._libname = libname
-        else:
-            suffix = ".a" if linkmode == "static" else ".so"
-            self._libname = "lib" + self.name + suffix
+        self._libname = libname
 
-    @property
+    @cached_property
     def libname(self) -> str:
-        return self._libname
+        if self._libname is not None:
+            return self._libname
+        else:
+            suffix = ".a" if self.linkmode == "static" else ".so"
+            return "lib" + self.name + suffix
 
     @property
     def headers(self) -> list[Include]:
@@ -181,17 +184,21 @@ class CCLibraryTarget(Target):
         return inst
 
     def add_dependency(self, dep: Target) -> None:
-        # only other CCLibraryTargets are allowed
         # TODO: If unable to restrict typing, go loud and throw errors here.
-        dep = cast(Self, dep)
-        self._dependencies.append(dep)
-        self.includes += dep.headers
-        self.defines += [_d for _d in dep.defines if not _d.local]
-        self.linkflags += dep.linkflags
-        self.flags += dep.flags
+        # only other CCLibraryTargets are allowed
+        if isinstance(dep, CCLibraryTarget):
+            self._dependencies.append(dep)
 
-    def add_features(self, features: set) -> None:
-        pass
+            self.includes += dep.headers
+            self.defines += [_d for _d in dep.defines if not _d.local]
+            self.linkflags += dep.linkflags
+            self.flags += dep.flags
+
+    def add_feature(self, feature: Feature) -> None:
+        if isinstance(feature, CcFeature):
+            self.flags += feature.flags
+            self.linkflags += feature.linkflags
+            self.defines += feature.defines
 
     @property
     def rules(self) -> Mapping[str, str]:
@@ -273,13 +280,6 @@ class CCExtensionTarget(CCLibraryTarget):
         if linkmode != "shared":
             raise ValueError("Python extensions have to be shared libraries")
 
-        if libname is None:
-            ext_suffixes = importlib.machinery.EXTENSION_SUFFIXES
-            # TODO: Make decision based on hanzo extension abi settings.
-            # first is non-abi3 extension, second is abi3.
-            suffix = ext_suffixes[0] if True else ext_suffixes[1]
-            libname = name + suffix
-
         super().__init__(
             name=name,
             sources=sources,
@@ -292,6 +292,16 @@ class CCExtensionTarget(CCLibraryTarget):
             linkmode=linkmode,
             libname=libname,
         )
+
+    @cached_property
+    def libname(self) -> str:
+        if self._libname is not None:
+            return self._libname
+        else:
+            uses_stable_abi = any(d.name == "Py_LIMITED_API" for d in self.defines or [])
+            ext_suffixes = importlib.machinery.EXTENSION_SUFFIXES
+            suffix = ext_suffixes[0] if not uses_stable_abi else ext_suffixes[1]
+            return self.name + suffix
 
 
 _BUILTIN_TARGETS: dict[str, type[Target]] = {

@@ -59,7 +59,7 @@ class HanzoSettings:
 class BuildConfig:
     _cc: CcToolchain
     _python: PythonToolchain
-    _features: set[Feature]
+    _features: dict[str, Feature]
 
     @classmethod
     def from_settings(cls, config_settings: dict[str, Any]) -> Self:
@@ -71,8 +71,8 @@ class BuildConfig:
             "--python-toolchain", DEFAULT_PY_TOOLCHAIN_NAME
         )
 
-        features: set[Feature] = {
-            get_feature(name)(name) for name in config_settings.get("--features", [])
+        features: dict[str, Feature] = {
+            name: get_feature(name)(name) for name in config_settings.get("--enable-feature", [])
         }
 
         # assigns private instance variables with parsed values.
@@ -90,11 +90,16 @@ class BuildConfig:
         return self._python
 
     @property
-    def features(self) -> set[Feature]:
-        return self._features
+    def features(self) -> Mapping[str, Feature]:
+        return MappingProxyType(self._features)
 
-    def add_builtin_features(settings: HanzoSettings) -> None:
-        pass
+    def add_builtin_features(self, settings: HanzoSettings) -> None:
+        if settings.wheel.stable_abi is not None:
+            from hanzo.features import StableABI
+
+            sabi_feature = StableABI(settings.wheel.stable_abi)
+            if self.python.version in sabi_feature.version_range:
+                self._features[sabi_feature.name] = sabi_feature
 
 
 @functools.lru_cache(maxsize=1)
@@ -125,28 +130,27 @@ def parse_hanzo_settings() -> HanzoSettings:
     pyproject = parse_pyproject()
     hanzo_info = pyproject.get("tool", {}).get("hanzo", {})
 
+    parsed_settings: dict[str, Any] = {}
+
     for field_ in fields(HanzoSettings):
-        block = hanzo_info.pop(field_.name, {})
+        block = {to_snakecase(k): v for k, v in hanzo_info.pop(field_.name, {}).items()}
         cfg = block
         if is_dataclass(field_.type):
             if field_.default_factory is not MISSING:
                 cfg = field_.default_factory()
                 if is_dataclass(cfg):
                     cfg = replace(cfg, **block)
-                continue
         elif isinstance(field_.type, type):
-            _normblock = {to_snakecase(k): v for k, v in block.items()}
-            cfg = field_.type(**_normblock)
+            cfg = field_.type(**block)
 
-        hanzo_info[field_.name] = cfg
+        parsed_settings[field_.name] = cfg
 
-    return HanzoSettings(hanzo_info)
+    return HanzoSettings(**parsed_settings)
 
 
 @functools.lru_cache(maxsize=1)
 def load_extensions(config: BuildConfig) -> Mapping[str, "Target"]:
     pyproject = parse_pyproject()
-    # TODO: Should this move into the settings?
     exts: dict[str, dict[str, Any]] = pyproject.get("tool", {}).get("hanzo", {}).get("targets", {})
 
     from hanzo.targets import _BUILTIN_TARGETS
@@ -156,12 +160,19 @@ def load_extensions(config: BuildConfig) -> Mapping[str, "Target"]:
         # remove pyproject keys responsible for build graph construction...
         target_type: str = _struct.pop("type")
         deps: list[str] = _struct.pop("dependencies", [])
+        feature_names: list[str] = _struct.pop("features", [])
         # ... and add config key for interpolating magic values in resources.
         _struct["config"] = config
 
         target = _BUILTIN_TARGETS[target_type].from_toml(_struct, config)
         for dep in deps:
             target.add_dependency(_build_graph[dep])
+
+        for fname in feature_names:
+            if fname in config.features:
+                print(f"hanzo: Adding feature {fname!r} to target {target.name!r}.")
+                feature = config.features[fname]
+                target.add_feature(feature)
 
         _build_graph[name] = target
 

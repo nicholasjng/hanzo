@@ -55,12 +55,17 @@ class StableABI(CcFeature):
         if abi_specifier.operator != ">=" or not abi_version.startswith("3"):
             raise ValueError(f"stable ABI specifier should be given as '>=3.x', got {abi_spec!r}")
 
+        self._version_range = abi_specifier
         try:
             abi_hex = _SABI_MAP[abi_version]
         except KeyError:
             raise ValueError(f"unsupported stable ABI version {abi_version!r}")
 
         self._defines.append(Define(name="Py_LIMITED_API", value=abi_hex))
+
+    @property
+    def version_range(self) -> Specifier:
+        return self._version_range
 
 
 _FEATURE_MAPPING: dict[str, type[Feature]] = {
