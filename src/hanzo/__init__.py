@@ -36,6 +36,8 @@ def build_wheel(
     metadata = parse_project_metadata()
     settings = parse_hanzo_settings()
     config = BuildConfig.from_settings(config_settings or {})
+    # TODO: Maybe give an option to disable builtin features
+    config.add_builtin_features(settings)
 
     wheel_directory = Path(wheel_directory)
     (build_dir := Path.cwd() / BUILD_DIRNAME).mkdir(exist_ok=True)
