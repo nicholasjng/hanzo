@@ -4,9 +4,9 @@ from collections.abc import Mapping
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Self, cast
+from typing import TYPE_CHECKING, Any, Self
 
-from packaging.metadata import Metadata, RawMetadata
+from pyproject_metadata import StandardMetadata
 
 from hanzo.constants import DEFAULT_CC_TOOLCHAIN_NAME, DEFAULT_PY_TOOLCHAIN_NAME, METADATA_VERSION
 from hanzo.features import Feature, get_feature
@@ -111,19 +111,12 @@ def parse_pyproject() -> dict[str, Any]:
     return pyproject
 
 
-def parse_project_metadata() -> Metadata:
-    from packaging.metadata import _EMAIL_TO_RAW_MAPPING
-
+def parse_project_metadata() -> StandardMetadata:
     pyproject = parse_pyproject()
-    project_info = pyproject["project"]
-
-    if "metadata-version" not in project_info:
-        project_info["metadata-version"] = METADATA_VERSION
-    # TODO: Error handling in line with metadata
-    project_info: RawMetadata = cast(
-        RawMetadata, {_EMAIL_TO_RAW_MAPPING[k]: v for k, v in project_info.items()}
+    metadata = StandardMetadata.from_pyproject(
+        pyproject, allow_extra_keys=False, all_errors=True, metadata_version=METADATA_VERSION
     )
-    return Metadata.from_raw(project_info)
+    return metadata
 
 
 def parse_hanzo_settings() -> HanzoSettings:

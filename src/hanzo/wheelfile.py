@@ -21,7 +21,7 @@ import stat
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import OrderedDict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from contextlib import ExitStack
 from datetime import UTC, datetime
 from email.message import Message
@@ -33,7 +33,6 @@ from types import TracebackType
 from typing import IO, NamedTuple, Self, cast
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
-from packaging.metadata import Metadata
 from packaging.tags import Tag
 from packaging.utils import (
     BuildTag,
@@ -42,8 +41,8 @@ from packaging.utils import (
     parse_wheel_filename,
 )
 from packaging.version import Version
+from pyproject_metadata import StandardMetadata
 
-from hanzo.constants import METADATA_VERSION
 from hanzo.utils import to_snakecase
 
 _exclude_filenames = ("RECORD", "RECORD.jws", "RECORD.p7s")
@@ -443,28 +442,24 @@ class WheelWriter:
         self.write_distinfo_file("WHEEL", buffer.getvalue())
 
     def write_metadata(
-        self, items: Metadata | Iterable[tuple[str, str]], timestamp: datetime = _default_timestamp
+        self, metadata: StandardMetadata, timestamp: datetime = _default_timestamp
     ) -> None:
-        if isinstance(items, Metadata):
-            msg = items.as_rfc822()
-        else:
-            # TODO: Remove this if no longer necessary.
-            msg = Message(policy=_email_policy)
-            for key, value in items:
-                key = key.title()
-                if key == "Description":
-                    msg.set_payload(value.encode("utf-8"))
-                else:
-                    msg.add_header(key, value)
 
-            if "Metadata-Version" not in msg:
-                msg["Metadata-Version"] = METADATA_VERSION
-            if "Name" not in msg:
-                msg["Name"] = self.metadata.name
-            if "Version" not in msg:
-                msg["Version"] = str(self.metadata.version)
-
+        msg = metadata.as_rfc822()
         self.write_distinfo_file("METADATA", msg.as_bytes(), timestamp=timestamp)
+
+        data = StringIO()
+        ep = metadata.entrypoints.copy()
+        ep["console_scripts"] = metadata.scripts
+        ep["gui_scripts"] = metadata.gui_scripts
+        for group, entries in ep.items():
+            if entries:
+                data.write(f"[{group}]" + os.linesep)
+                for name, target in entries.items():
+                    data.write(f"{name} = {target}" + os.linesep)
+                data.write(os.linesep)
+
+        self.write_distinfo_file("entry_points.txt", data.getvalue(), timestamp=timestamp)
 
     def write_file(
         self,
