@@ -1,3 +1,4 @@
+import contextlib
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,24 +17,25 @@ class FileGlob:
     exclude: list[str] = field(default_factory=list)
     allow_empty: bool = False
 
-    def resolve(self) -> list[str]:
-        results: list[str] = []
-        for p in self.include:
-            star = p.find("*")
-            if star == -1:
-                if p not in self.exclude:
-                    results.append(p)
-            else:
-                path, pattern = Path(p[:star]), p[star:]
-                # paths are relative to cwd, so use with chdir().
-                for res in path.glob(pattern):
-                    res = str(res)
-                    if res not in self.exclude:
-                        results.append(res)
-        if not results and not self.allow_empty:
-            raise ValueError(f"glob pattern {self.include} did not yield any results")
+    def resolve(self, directory: str | os.PathLike[str]) -> list[str]:
+        with contextlib.chdir(directory):
+            results: list[str] = []
+            for p in self.include:
+                star = p.find("*")
+                if star == -1:
+                    if p not in self.exclude:
+                        results.append(p)
+                else:
+                    path, pattern = Path(p[:star]), p[star:]
+                    # paths are relative to cwd, so use with chdir().
+                    for res in path.glob(pattern):
+                        res = str(res)
+                        if res not in self.exclude:
+                            results.append(res)
+            if not results and not self.allow_empty:
+                raise ValueError(f"glob pattern {self.include} did not yield any results")
 
-        return results
+            return results
 
 
 class IncludeDict(TypedDict, total=False):

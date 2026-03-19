@@ -1,6 +1,5 @@
 """Ninja rule definitions in Python."""
 
-import contextlib
 import importlib.machinery
 import operator
 import os
@@ -16,10 +15,6 @@ from hanzo.rules import cc_compile, cc_linkshared, cc_linkstatic
 from hanzo.settings import BuildConfig
 from hanzo.types import Define, DefineDict, FileGlob, GlobDict, Include, IncludeDict
 
-_SABI_MAP: dict[str, str] = {
-    "cp3" + str(minor): hex((3 << 24) + (minor << 16)) for minor in range(1, 16)
-}
-
 
 def substitute(
     path: str | os.PathLike[str],
@@ -27,7 +22,6 @@ def substitute(
     root: str | os.PathLike[str] | None = None,
 ) -> Path:
     # TODO: Get "root" into the settings somehow, or make a derivative context type.
-
     def _interpolate(matchobj: re.Match) -> str:
         # strip away the "@" marker in front.
         var = matchobj.group(0)[1:]
@@ -38,10 +32,9 @@ def substitute(
         getter = operator.attrgetter(var)
         return str(getter(config))
 
-    spath = str(path)
     attr_regex = re.compile(r"(@[a-zA-Z_][a-zA-Z0-9_.]*)")
 
-    res = attr_regex.sub(_interpolate, spath)
+    res = attr_regex.sub(_interpolate, Path(path).as_posix())
     return Path(res)
 
 
@@ -52,8 +45,7 @@ def collect(sources: list[str | GlobDict], cwd: str | os.PathLike[str]) -> list[
             results.append(item)
         else:
             g = FileGlob(**item)
-            with contextlib.chdir(cwd):
-                results.extend(g.resolve())
+            results.extend(g.resolve(cwd))
     return results
 
 
