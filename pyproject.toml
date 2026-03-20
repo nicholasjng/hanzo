@@ -1,6 +1,7 @@
 [build-system]
-requires = ["uv_build"]
-build-backend = "uv_build"
+requires = ["packaging>=26.0", "pyproject-metadata>=0.10.0"]
+build-backend = 'hanzo' # TODO: Add bootstrap module to avoid requires duplication above
+backend-path = ['src']
 
 [project]
 name = "hanzo"
@@ -20,6 +21,10 @@ dependencies = [
 dev = [
     "pyrefly>=0.55.0",
     "ruff>=0.15.2",
+]
+test = [
+    "build>=1.4.0",
+    "pytest>=9.0.2",
 ]
 
 [tool.ruff]
