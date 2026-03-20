@@ -13,6 +13,7 @@ license = "Apache-2.0"
 
 requires-python = ">=3.11"
 dependencies = [
+    "ninja>=1.10.0",
     "packaging>=26.0",
     "pyproject-metadata>=0.10.0",
 ]

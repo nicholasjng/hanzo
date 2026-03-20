@@ -21,9 +21,25 @@ use Python.
 
 import os
 import re
+import shutil
+import sysconfig
 import textwrap
 from io import TextIOWrapper
-from re import Match
+from pathlib import Path
+
+
+def get_ninja_executable() -> str:
+    import ninja as ninja_distro
+
+    # first, get current first-in-PATH ninja...
+    system_ninja: str | None = shutil.which("ninja")
+    if system_ninja is not None:
+        return system_ninja
+
+    # ...then fall back to PyPI ninja distro's executable.
+    bin_dir = ninja_distro.BIN_DIR
+    ninja_exe = "ninja" + sysconfig.get_config_var("EXE")
+    return str(Path(bin_dir) / ninja_exe)
 
 
 def escape_path(word: str) -> str:
@@ -220,7 +236,7 @@ def expand(string: str, vars: dict[str, str], local_vars: dict[str, str] = {}) -
     to make configure.py's use of it work.
     """
 
-    def exp(m: Match[str]) -> str:
+    def exp(m: re.Match[str]) -> str:
         var = m.group(1)
         if var == "$":
             return "$"

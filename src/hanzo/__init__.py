@@ -8,7 +8,7 @@ from pathlib import Path
 
 from packaging.tags import Tag
 
-from hanzo.ninja import NinjaWriter
+from hanzo.ninja import NinjaWriter, get_ninja_executable
 from hanzo.settings import (
     BuildConfig,
     load_extensions,
@@ -90,10 +90,12 @@ def build_wheel(
             ninja.newline()
             ninja.default("all")
 
-        # TODO: Improve this with the use of ninja from PyPI
-        subprocess.check_call(["ninja", "-C", str(build_dir)])  # noqa: S603, S607
+        ninja_exe = get_ninja_executable()
+        subprocess.check_call([ninja_exe, "-C", str(build_dir)], shell=False)  # noqa: S603
 
-    with WheelWriter(wheel_file, generator="hanzo", root_is_purelib=root_is_purelib) as wheel:
+    with WheelWriter(
+        wheel_file, generator=f"hanzo {__version__}", root_is_purelib=root_is_purelib
+    ) as wheel:
         project_path = Path(project_name)
         # step 1: create dist-info dir, write metadata into it.
         # TODO: Move into prepare_metadata
