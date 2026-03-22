@@ -20,7 +20,7 @@ def substitute(
     path: str | os.PathLike[str],
     config: BuildConfig,
     root: str | os.PathLike[str] | None = None,
-) -> Path:
+) -> str:
     # TODO: Get "root" into the settings somehow, or make a derivative context type.
     def _interpolate(matchobj: re.Match) -> str:
         # strip away the "@" marker in front.
@@ -33,9 +33,7 @@ def substitute(
         return str(getter(config))
 
     attr_regex = re.compile(r"(@[a-zA-Z_][a-zA-Z0-9_.]*)")
-
-    res = attr_regex.sub(_interpolate, Path(path).as_posix())
-    return Path(res)
+    return attr_regex.sub(_interpolate, Path(path).as_posix())
 
 
 def collect(sources: list[str | GlobDict], cwd: str | os.PathLike[str]) -> list[str]:
@@ -69,7 +67,7 @@ class Target:
 
     @property
     def root(self) -> Path:
-        return self._rootpath
+        return Path(self._rootpath)
 
     @property
     def sources(self) -> list[str]:
@@ -131,8 +129,9 @@ class CCLibraryTarget(Target):
     @classmethod
     def from_toml(cls, toml: dict[str, Any], config: BuildConfig) -> Self:
         def _expand_path(path: str | os.PathLike[str], root: str | os.PathLike[str]) -> str:
+            root = Path(root)
             path = substitute(path, config, root)
-            return str(path if path.is_absolute() else root / path)
+            return str(path if Path(path).is_absolute() else root / path)
 
         parsed_config = toml.copy()
 
@@ -164,11 +163,11 @@ class CCLibraryTarget(Target):
                 defines.append(Define(**_def))
 
         for flag in raw_flags:
-            parsed_flag = str(substitute(flag, config, rootpath))
+            parsed_flag = substitute(flag, config, rootpath)
             flags.append(parsed_flag)
 
         for flag in raw_ldflags:
-            parsed_flag = str(substitute(flag, config, rootpath))
+            parsed_flag = substitute(flag, config, rootpath)
             linkflags.append(parsed_flag)
 
         parsed_config |= dict(includes=includes, defines=defines, flags=flags, linkflags=linkflags)
@@ -290,7 +289,7 @@ class CCExtensionTarget(CCLibraryTarget):
         if self._libname is not None:
             return self._libname
         else:
-            uses_stable_abi = any(d.name == "Py_LIMITED_API" for d in self.defines or [])
+            uses_stable_abi = any(d.name == "Py_LIMITED_API" for d in self.defines)
             ext_suffixes = importlib.machinery.EXTENSION_SUFFIXES
             suffix = ext_suffixes[0] if not uses_stable_abi else ext_suffixes[1]
             return self.name + suffix
