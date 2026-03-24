@@ -23,7 +23,7 @@ dev = [
     "pyrefly>=0.55.0",
     "ruff>=0.15.2",
 ]
-test = [
+tests = [
     "build>=1.4.0",
     "pytest>=9.0.2",
 ]
