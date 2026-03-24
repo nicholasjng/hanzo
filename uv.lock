@@ -40,7 +40,7 @@ dev = [
     { name = "pyrefly" },
     { name = "ruff" },
 ]
-test = [
+tests = [
     { name = "build" },
     { name = "pytest" },
 ]
@@ -57,7 +57,7 @@ dev = [
     { name = "pyrefly", specifier = ">=0.55.0" },
     { name = "ruff", specifier = ">=0.15.2" },
 ]
-test = [
+tests = [
     { name = "build", specifier = ">=1.4.0" },
     { name = "pytest", specifier = ">=9.0.2" },
 ]
