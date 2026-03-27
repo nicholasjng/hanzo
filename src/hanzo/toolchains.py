@@ -3,7 +3,6 @@ import os
 import subprocess
 import sys
 import sysconfig
-import types
 from enum import StrEnum, auto
 from typing import Literal, Self, overload
 
@@ -164,17 +163,10 @@ PythonHostToolchain = PythonToolchain(
 PythonCurrentInterpreterToolchain = PythonToolchain.current()
 
 
-# read-write and read-only name->toolchain mapping for C++.
-_cc_toolchains: dict[str, CcToolchain] = {
-    "host": CcHostToolchain,
+_toolchains: dict[str, Toolchain] = {
+    "cc-host": CcHostToolchain,
+    "python-current": PythonCurrentInterpreterToolchain,
 }
-cc_toolchains = types.MappingProxyType(_cc_toolchains)
-
-# read-write and read-only name->toolchain mappings for Python.
-_py_toolchains: dict[str, PythonToolchain] = {
-    "current": PythonCurrentInterpreterToolchain,
-}
-py_toolchains = types.MappingProxyType(_py_toolchains)
 
 
 @overload
@@ -186,11 +178,9 @@ def get_toolchain(name: str, typ: Literal[ToolchainType.PYTHON]) -> PythonToolch
 
 
 def get_toolchain(name: str, typ: ToolchainType) -> Toolchain:
+    key = f"{typ}-{name}"
     try:
-        if typ == ToolchainType.CC:
-            return cc_toolchains[name]
-        elif typ == ToolchainType.PYTHON:
-            return py_toolchains[name]
+        return _toolchains[key]
     except KeyError:
         raise ToolchainNotFoundError(f"no {typ} toolchain named {name!r}") from None
 
@@ -201,7 +191,5 @@ __all__ = [
     "PythonToolchain",
     "CcHostToolchain",
     "PythonCurrentInterpreterToolchain",
-    "cc_toolchains",
-    "py_toolchains",
     "get_toolchain",
 ]
