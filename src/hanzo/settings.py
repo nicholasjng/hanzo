@@ -10,6 +10,7 @@ from pyproject_metadata import StandardMetadata
 
 from hanzo.constants import DEFAULT_CC_TOOLCHAIN_NAME, DEFAULT_PY_TOOLCHAIN_NAME, METADATA_VERSION
 from hanzo.features import Feature, get_feature
+from hanzo.platform import Platform
 from hanzo.toolchains import (
     CcToolchain,
     PythonToolchain,
@@ -60,6 +61,7 @@ class HanzoSettings:
 class BuildConfig:
     _cc: CcToolchain
     _python: PythonToolchain
+    _platform: Platform
     _features: dict[str, Feature]
 
     @classmethod
@@ -79,6 +81,15 @@ class BuildConfig:
         # assigns private instance variables with parsed values.
         ins._cc = get_toolchain(cc_toolchain_name, ToolchainType.CC)
         ins._python = get_toolchain(py_toolchain_name, ToolchainType.PYTHON)
+
+        # platform selection by parsing the input string.
+        platform_str = config_settings.get("--platform")
+        if platform_str is None:
+            ins._platform = Platform.host()
+        else:
+            ins._platform = Platform.parse(platform_str)
+
+        # and build features.
         ins._features = features
         return ins
 
@@ -89,6 +100,10 @@ class BuildConfig:
     @property
     def python(self) -> PythonToolchain:
         return self._python
+
+    @property
+    def platform(self) -> Platform:
+        return self._platform
 
     @property
     def features(self) -> Mapping[str, Feature]:
