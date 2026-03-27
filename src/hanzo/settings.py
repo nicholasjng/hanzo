@@ -45,6 +45,7 @@ class PythonSettings:
 
 @dataclass
 class CcSettings:
+    standard: str = "c++17"
     export_compile_commands: bool = False
 
 
@@ -94,6 +95,11 @@ class BuildConfig:
         return MappingProxyType(self._features)
 
     def add_builtin_features(self, settings: HanzoSettings) -> None:
+        from hanzo.features import CcStandard
+
+        standard_feature = CcStandard(settings.cc.standard)
+        self._features[standard_feature.name] = standard_feature
+
         if settings.wheel.stable_abi is not None:
             from hanzo.features import StableABI
 
@@ -166,6 +172,11 @@ def load_extensions(config: BuildConfig) -> Mapping[str, "Target"]:
                 print(f"hanzo: Adding feature {fname!r} to target {target.name!r}.")
                 feature = config.features[fname]
                 target.add_feature(feature)
+
+        for fname in target._COMPATIBLE_FEATURES:
+            if fname in config.features:
+                print(f"hanzo: Adding feature {fname!r} to target {target.name!r}.")
+                target.add_feature(config.features[fname])
 
         _build_graph[name] = target
 

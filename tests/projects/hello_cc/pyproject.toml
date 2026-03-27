@@ -28,7 +28,6 @@ includes = [
 ]
 features = ["stable-abi"]
 flags = [
-    "-std=c++17",  # TODO: Set standard in hanzo top-level C++ settings
     "-fPIC",
     "-fvisibility=hidden",
     "-fno-strict-aliasing",
