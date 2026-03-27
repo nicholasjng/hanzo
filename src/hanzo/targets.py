@@ -48,6 +48,8 @@ def collect(sources: list[str | GlobDict], cwd: str | os.PathLike[str]) -> list[
 
 
 class Target:
+    _COMPATIBLE_FEATURES: tuple[str, ...] = ()
+
     def __init__(
         self,
         name: str,
@@ -91,6 +93,8 @@ class Target:
 
 
 class CCLibraryTarget(Target):
+    _COMPATIBLE_FEATURES: tuple[str, ...] = ("cc-standard",)
+
     def __init__(
         self,
         name: str,

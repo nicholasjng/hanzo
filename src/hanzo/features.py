@@ -68,8 +68,17 @@ class StableABI(CcFeature):
         return self._version_range
 
 
+class CcStandard(CcFeature):
+    """A feature setting the C++ standard for a target."""
+
+    def __init__(self, standard: str):
+        super().__init__(name="cc-standard")
+        self._flags.append(f"--std={standard}")
+
+
 _FEATURE_MAPPING: dict[str, type[Feature]] = {
     "stable-abi": StableABI,
+    "cc-standard": CcStandard,
 }
 
 
@@ -90,6 +99,7 @@ def register_feature(name: str, feature: type[Feature], force: bool = False) -> 
 __all__ = [
     "Feature",
     "CcFeature",
+    "CcStandard",
     "StableABI",
     "get_feature",
     "register_feature",
