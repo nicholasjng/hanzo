@@ -5,6 +5,7 @@ import operator
 import os
 import re
 from collections.abc import Mapping
+from enum import StrEnum
 from functools import cached_property
 from pathlib import Path
 from types import MappingProxyType
@@ -14,6 +15,13 @@ from hanzo.features import CcFeature, Feature
 from hanzo.rules import Rule
 from hanzo.settings import BuildConfig
 from hanzo.types import Define, DefineDict, FileGlob, GlobDict, Include, IncludeDict
+
+
+class CcRuleTypes(StrEnum):
+    CC = "cc"
+    LINKSTATIC = "linkstatic"
+    LINKSHARED = "linkshared"
+    ASM = "asm"
 
 
 def substitute(
@@ -200,7 +208,11 @@ class CCLibraryTarget(Target):
         from hanzo.rules import cc_compile, cc_linkshared, cc_linkstatic
 
         return MappingProxyType(
-            {rule.name: rule for rule in (cc_compile, cc_linkstatic, cc_linkshared)}
+            {
+                CcRuleTypes.CC: cc_compile,
+                CcRuleTypes.LINKSTATIC: cc_linkstatic,
+                CcRuleTypes.LINKSHARED: cc_linkshared,
+            }
         )
 
     def build_outputs(self) -> list[dict]:
@@ -224,7 +236,7 @@ class CCLibraryTarget(Target):
             _objfiles.append(_objfile)
             target: dict[str, Any] = {
                 "outputs": _objfile,
-                "rule": "cc",
+                "rule": self.rules[CcRuleTypes.CC].name,
                 "inputs": [str(input)],
                 "variables": variables,
             }
@@ -243,9 +255,10 @@ class CCLibraryTarget(Target):
             variables.append(("linkflags", self.linkflags))
             variables.append(("link_libraries", libnames))
 
+        linkrule = CcRuleTypes.LINKSTATIC if linkstatic else CcRuleTypes.LINKSHARED
         libtarget = {
             "outputs": self.libname,
-            "rule": "cc-linkstatic" if linkstatic else "cc-linkshared",
+            "rule": self.rules[linkrule].name,
             "inputs": _objfiles,
             "variables": variables,
             "implicit": libnames,
