@@ -4,11 +4,16 @@ from collections.abc import Mapping
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Literal, Self, overload
 
 from pyproject_metadata import StandardMetadata
 
-from hanzo.constants import DEFAULT_CC_TOOLCHAIN_NAME, DEFAULT_PY_TOOLCHAIN_NAME, METADATA_VERSION
+from hanzo.constants import (
+    DEFAULT_BUILD_DIR,
+    DEFAULT_CC_TOOLCHAIN_NAME,
+    DEFAULT_PY_TOOLCHAIN_NAME,
+    METADATA_VERSION,
+)
 from hanzo.features import Feature, get_feature
 from hanzo.platform import Platform
 from hanzo.toolchains import (
@@ -27,6 +32,26 @@ _build_graph: dict[str, "Target"] = {}
 
 def get_build_graph() -> Mapping[str, "Target"]:
     return MappingProxyType(_build_graph)
+
+
+@overload
+def ensure_scalar_setting(settings: dict[str, str | list[str]], key: str, default: str) -> str: ...
+
+
+@overload
+def ensure_scalar_setting(
+    settings: dict[str, str | list[str]], key: str, default: Literal[None] = None
+) -> str | None: ...
+
+
+def ensure_scalar_setting(
+    settings: dict[str, str | list[str]], key: str, default: str | None = None
+) -> str | None:
+    """Return a scalar value for a given key in PEP517 config settings."""
+    val = settings.get(key, default)
+    if isinstance(val, list):
+        raise ValueError(f"got multiple values for {key!r}")
+    return val
 
 
 @dataclass
@@ -63,35 +88,54 @@ class BuildConfig:
     _python: PythonToolchain
     _platform: Platform
     _features: dict[str, Feature]
+    _build_dir: Path
+    _clean: bool
 
     @classmethod
-    def from_settings(cls, config_settings: dict[str, Any]) -> Self:
+    def from_settings(cls, config_settings: dict[str, str | list[str]]) -> Self:
         """Hydrates the class with PEP517 config settings."""
         ins = cls()
         # TODO: Parse these config settings with argparse or similar
-        cc_toolchain_name: str = config_settings.get("--cc-toolchain", DEFAULT_CC_TOOLCHAIN_NAME)
-        py_toolchain_name: str = config_settings.get(
-            "--python-toolchain", DEFAULT_PY_TOOLCHAIN_NAME
+        cc_toolchain_name: str = ensure_scalar_setting(
+            config_settings, "--cc-toolchain", DEFAULT_CC_TOOLCHAIN_NAME
         )
-
-        features: dict[str, Feature] = {
-            name: get_feature(name)(name) for name in config_settings.get("--enable-feature", [])
-        }
+        py_toolchain_name: str = ensure_scalar_setting(
+            config_settings, "--python-toolchain", DEFAULT_PY_TOOLCHAIN_NAME
+        )
 
         # assigns private instance variables with parsed values.
         ins._cc = get_toolchain(cc_toolchain_name, ToolchainType.CC)
         ins._python = get_toolchain(py_toolchain_name, ToolchainType.PYTHON)
 
+        features: dict[str, Feature] = {
+            name: get_feature(name)(name) for name in config_settings.get("--enable-feature", [])
+        }
+
+        # and build features.
+        ins._features = features
+
         # platform selection by parsing the input string.
-        platform_str = config_settings.get("--platform")
+        platform_str = ensure_scalar_setting(config_settings, "--platform")
         if platform_str is None:
             ins._platform = Platform.host()
         else:
             ins._platform = Platform.parse(platform_str)
 
-        # and build features.
-        ins._features = features
+        build_dir = ensure_scalar_setting(config_settings, "--build-dir", DEFAULT_BUILD_DIR)
+        ins._build_dir = Path(build_dir)
+
+        # run a ninja -t clean before building.
+        ins._clean = "--clean" in config_settings
+
         return ins
+
+    @property
+    def clean(self) -> bool:
+        return self._clean
+
+    @property
+    def build_dir(self) -> Path:
+        return self._build_dir
 
     @property
     def cc(self) -> CcToolchain:
