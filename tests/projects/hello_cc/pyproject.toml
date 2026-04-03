@@ -8,7 +8,6 @@ version = "0.1.0"
 keywords = ["hello", "c++"]
 requires-python = ">=3.10"
 
-
 [tool.uv.sources]
 hanzo = { path = "../../..", editable = true }
 

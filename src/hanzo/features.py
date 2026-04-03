@@ -73,7 +73,7 @@ class CcStandard(CcFeature):
 
     def __init__(self, standard: str):
         super().__init__(name="cc-standard")
-        self._flags.append(f"--std={standard}")
+        self._flags.append(f"-std={standard}")
 
 
 _FEATURE_MAPPING: dict[str, type[Feature]] = {
