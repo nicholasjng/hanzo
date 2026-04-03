@@ -34,6 +34,9 @@ class Toolchain:
     def name(self) -> str:
         return self._name
 
+    def to_dict(self) -> dict[str, str]:
+        return {k[1:]: v for k, v in self.__dict__.items()}
+
 
 class CcToolchain(Toolchain):
     """An implementation of a C++ toolchain."""
@@ -76,10 +79,6 @@ class CcToolchain(Toolchain):
     @property
     def supported_platforms(self) -> tuple[str, ...]:
         return ("macos",)
-
-    def to_dict(self) -> dict[str, str]:
-        # strip leading underscore off all private field names.
-        return {k[1:]: v for k, v in self.__dict__.items()}
 
 
 class PythonToolchain(Toolchain):

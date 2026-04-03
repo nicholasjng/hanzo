@@ -9,3 +9,6 @@ __pycache__
 
 # macOS-specific stuff
 .DS_Store
+
+# AI configs
+.claude

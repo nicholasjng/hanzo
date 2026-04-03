@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Any, Literal, Self, cast
 
 from hanzo.features import CcFeature, Feature
-from hanzo.rules import cc_compile, cc_linkshared, cc_linkstatic
+from hanzo.rules import Rule
 from hanzo.settings import BuildConfig
 from hanzo.types import Define, DefineDict, FileGlob, GlobDict, Include, IncludeDict
 
@@ -48,7 +48,7 @@ def collect(sources: list[str | GlobDict], cwd: str | os.PathLike[str]) -> list[
 
 
 class Target:
-    _COMPATIBLE_FEATURES: tuple[str, ...] = ()
+    COMPATIBLE_FEATURES: tuple[str, ...] = ()
 
     def __init__(
         self,
@@ -87,13 +87,13 @@ class Target:
     def from_toml(cls, toml: dict[str, Any], config: BuildConfig) -> Self: ...
 
     @property
-    def rules(self) -> Mapping[str, str]: ...
+    def rules(self) -> Mapping[str, Rule]: ...
 
     def build_outputs(self) -> list[dict]: ...  # TODO: Make this typing more precise
 
 
 class CCLibraryTarget(Target):
-    _COMPATIBLE_FEATURES: tuple[str, ...] = ("cc-standard",)
+    COMPATIBLE_FEATURES: tuple[str, ...] = ("cc-standard",)
 
     def __init__(
         self,
@@ -196,13 +196,11 @@ class CCLibraryTarget(Target):
             self.defines += feature.defines
 
     @property
-    def rules(self) -> Mapping[str, str]:
+    def rules(self) -> Mapping[str, Rule]:
+        from hanzo.rules import cc_compile, cc_linkshared, cc_linkstatic
+
         return MappingProxyType(
-            {
-                "cc": cc_compile,
-                "cc_linkstatic": cc_linkstatic,
-                "cc_linkshared": cc_linkshared,
-            }
+            {rule.name: rule for rule in (cc_compile, cc_linkstatic, cc_linkshared)}
         )
 
     def build_outputs(self) -> list[dict]:
@@ -216,13 +214,13 @@ class CCLibraryTarget(Target):
                 continue
 
             variables: list[tuple[str, str | list[str]]] = [
-                ("depfile", str(output.with_suffix(output.suffix + ".o.d"))),
+                ("depfile", str(output.with_suffix(".o.d"))),
                 ("includes", list(map(str, self.includes))),
                 ("defines", list(map(str, self.defines))),
                 ("flags", self.flags),
             ]
 
-            _objfile = str(output.with_suffix(output.suffix + ".o"))
+            _objfile = str(output.with_suffix(".o"))
             _objfiles.append(_objfile)
             target: dict[str, Any] = {
                 "outputs": _objfile,

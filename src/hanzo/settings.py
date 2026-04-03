@@ -188,7 +188,7 @@ def load_extensions(config: BuildConfig) -> Mapping[str, "Target"]:
                 feature = config.features[fname]
                 target.add_feature(feature)
 
-        for fname in target._COMPATIBLE_FEATURES:
+        for fname in target.COMPATIBLE_FEATURES:
             if fname in config.features:
                 print(f"hanzo: Adding feature {fname!r} to target {target.name!r}.")
                 target.add_feature(config.features[fname])
