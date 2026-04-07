@@ -14,6 +14,8 @@ hanzo = { path = "../../..", editable = true }
 [tool.hanzo]
 wheel.stable-abi = ">=3.12"
 
+cc.export_compile_commands = true
+
 [tool.hanzo.targets.nanobind]
 type = "cc-library"
 rootpath = "@python.site/nanobind"
