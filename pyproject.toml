@@ -19,13 +19,14 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "pyrefly>=0.55.0",
-    "ruff>=0.15.2",
-]
 tests = [
     "build>=1.4.0",
     "pytest>=9.0.2",
+]
+zed = [
+    "pyrefly>=0.60.0",
+    "ruff>=0.15.2",
+    "ty>=0.0.29",
 ]
 
 [tool.ruff]
