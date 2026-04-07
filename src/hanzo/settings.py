@@ -12,6 +12,7 @@ from hanzo.constants import (
     DEFAULT_BUILD_DIR,
     DEFAULT_CC_TOOLCHAIN_NAME,
     DEFAULT_PY_TOOLCHAIN_NAME,
+    DEFAULT_SOURCE_EXTENSIONS,
     METADATA_VERSION,
 )
 from hanzo.features import Feature, get_feature
@@ -62,6 +63,11 @@ class SdistSettings:
 @dataclass
 class WheelSettings:
     stable_abi: str | None = None
+    sources: frozenset[str] = field(default_factory=lambda: DEFAULT_SOURCE_EXTENSIONS)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.sources, frozenset):
+            self.sources = frozenset(self.sources)
 
 
 @dataclass
