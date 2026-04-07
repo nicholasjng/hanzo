@@ -27,10 +27,8 @@ import sysconfig
 import textwrap
 from io import TextIOWrapper
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from hanzo.rules import Rule
+from hanzo.rules import Rule
 
 
 def get_ninja_executable() -> str:
