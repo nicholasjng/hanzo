@@ -62,7 +62,7 @@ def build_wheel(
             for ext in ext_modules.values():
                 if settings.cc.export_compile_commands:
                     # TODO: Extend to support custom extension types
-                    if isinstance(ext, CCLibraryTarget | CCExtensionTarget):
+                    if isinstance(ext, CCLibraryTarget):
                         cc_compilation_rules.add(ext.rules["cc"])
 
                 for rule in ext.rules.values():
