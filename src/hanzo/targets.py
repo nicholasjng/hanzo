@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Any, Literal, Self, cast
 
 from hanzo.features import CcFeature, Feature
+from hanzo.platform import Platform
 from hanzo.rules import Rule
 from hanzo.settings import BuildConfig
 from hanzo.types import Define, DefineDict, FileGlob, GlobDict, Include, IncludeDict
@@ -22,6 +23,24 @@ class CcRuleTypes(StrEnum):
     LINKSTATIC = "linkstatic"
     LINKSHARED = "linkshared"
     ASM = "asm"
+
+
+def _match_platform_dict(
+    platform_map: dict[str, list[str]],
+    platform: Platform,
+) -> list:
+    """Return the concatenated lists from *platform_map* whose keys match *platform*.
+
+    Each key is treated as a case-insensitive regex matched against
+    ``platform.system``.  For example the key ``"macos"`` matches
+    ``platform.system == "macosx"``.
+    """
+    system = platform.system.lower()
+    result: list = []
+    for key, values in platform_map.items():
+        if re.match(key.lower(), system):
+            result.extend(values)
+    return result
 
 
 def substitute(
@@ -118,11 +137,11 @@ class CCLibraryTarget(Target):
     ):
         super().__init__(name, sources, config, rootpath)
 
-        self.includes = includes or []
-        self.defines = defines or []
-        self.flags = flags or []
-        self.linkflags = linkflags or []
-        self.linkmode = linkmode
+        self.includes: list[Include] = includes or []
+        self.defines: list[Define] = defines or []
+        self.flags: list[str] = flags or []
+        self.linkflags: list[str] = linkflags or []
+        self.linkmode: Literal["static", "shared"] = linkmode
 
         self._libname = libname
 
@@ -147,12 +166,32 @@ class CCLibraryTarget(Target):
 
         parsed_config = toml.copy()
 
-        rootpath: str | os.PathLike[str] = toml.get("rootpath", Path.cwd())
+        name: str = parsed_config.pop("name")
+        sources: list[str | GlobDict] = parsed_config.pop("sources")
+        rootpath: str | os.PathLike[str] = parsed_config.pop("rootpath", Path.cwd())
         rootpath = substitute(rootpath, config)
         raw_includes: list[str | IncludeDict] = toml.get("includes", [])
-        raw_defines: list[str | DefineDict] = toml.get("defines", [])
-        raw_flags: list[str] = toml.get("flags", [])
-        raw_ldflags: list[str] = toml.get("linkflags", [])
+
+        _defines_toml = toml.get("defines", [])
+        raw_defines: list[str | DefineDict] = (
+            _match_platform_dict(_defines_toml, config.platform)
+            if isinstance(_defines_toml, dict)
+            else _defines_toml
+        )
+
+        _flags_toml = toml.get("flags", [])
+        raw_flags: list[str] = (
+            _match_platform_dict(_flags_toml, config.platform)
+            if isinstance(_flags_toml, dict)
+            else _flags_toml
+        )
+
+        _ldflags_toml = toml.get("linkflags", [])
+        raw_ldflags: list[str] = (
+            _match_platform_dict(_ldflags_toml, config.platform)
+            if isinstance(_ldflags_toml, dict)
+            else _ldflags_toml
+        )
         (
             includes,
             defines,
@@ -183,8 +222,7 @@ class CCLibraryTarget(Target):
             linkflags.append(parsed_flag)
 
         parsed_config |= dict(includes=includes, defines=defines, flags=flags, linkflags=linkflags)
-        inst = cls(**parsed_config)
-        return inst
+        return cls(name, sources, config, rootpath, **parsed_config)
 
     def add_dependency(self, dep: Target) -> None:
         # TODO: If unable to restrict typing, go loud and throw errors here.
