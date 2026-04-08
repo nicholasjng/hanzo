@@ -64,10 +64,13 @@ class SdistSettings:
 class WheelSettings:
     stable_abi: str | None = None
     sources: frozenset[str] = field(default_factory=lambda: DEFAULT_SOURCE_EXTENSIONS)
+    data: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         if not isinstance(self.sources, frozenset):
             self.sources = frozenset(self.sources)
+        if not isinstance(self.data, frozenset):
+            self.data = frozenset(self.data)
 
 
 @dataclass
@@ -225,8 +228,6 @@ def load_extensions(config: BuildConfig) -> Mapping[str, "Target"]:
         target_type: str = _struct.pop("type")
         deps: list[str] = _struct.pop("dependencies", [])
         feature_names: list[str] = _struct.pop("features", [])
-        # ... and add config key for interpolating magic values in resources.
-        _struct["config"] = config
 
         target = _BUILTIN_TARGETS[target_type].from_toml(_struct, config)
         for dep in deps:

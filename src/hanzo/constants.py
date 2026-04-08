@@ -7,5 +7,6 @@ DEFAULT_PY_TOOLCHAIN_NAME: str = "current"
 # default build directory for C/C++ extensions
 DEFAULT_BUILD_DIR = "build"
 
-# default source file extensions
+# default source and data file extensions
 DEFAULT_SOURCE_EXTENSIONS: frozenset[str] = frozenset({".py", ".pyi"})
+DEFAULT_DATA_EXTENSIONS: frozenset[str] = frozenset()

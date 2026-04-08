@@ -13,7 +13,7 @@ from hanzo.settings import (
     parse_project_metadata,
 )
 from hanzo.targets import CCExtensionTarget, CCLibraryTarget
-from hanzo.utils import calculate_wheel_tag, collect_src_files, to_snakecase
+from hanzo.utils import GitignoreMatcher, calculate_wheel_tag, to_snakecase
 from hanzo.wheelfile import WheelWriter
 
 __version__ = "0.1.0"
@@ -107,11 +107,12 @@ def build_wheel(
         # TODO: Move into prepare_metadata
         wheel.write_metadata(metadata)
 
-        for archive_path, disk_path in collect_src_files(Path("src")):
-            if Path(archive_path).suffix in settings.wheel.sources:
-                wheel.write_file(archive_path, disk_path, timestamp=datetime.now())
-            else:
-                wheel.write_data_file(str(archive_path), disk_path, timestamp=datetime.now())
+        matcher = GitignoreMatcher.from_gitignore()
+        for file in matcher.match_files("src"):
+            if file.suffix in settings.wheel.sources:
+                wheel.write_file(project_path / file.name, file, timestamp=datetime.now())
+            elif file.suffix in settings.wheel.data:
+                wheel.write_data_file(str(file), file, timestamp=datetime.now())
 
         for file in build_dir.iterdir():
             # TODO: Refine this based on the expected kinds of build artifacts,
