@@ -4,9 +4,9 @@ import dataclasses
 import fnmatch
 import os
 import sysconfig
-from collections.abc import Iterator
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, Self
 
 from packaging.specifiers import SpecifierSet
 from packaging.tags import Tag
@@ -20,82 +20,71 @@ class GitignorePattern(NamedTuple):
     negated: bool
 
 
-def _load_gitignore_patterns(root: Path) -> list[GitignorePattern]:
-    """Read .gitignore from root and return a list of GitignorePattern entries."""
-    gitignore = root / ".gitignore"
-    if not gitignore.exists():
-        return []
-    patterns: list[GitignorePattern] = []
-    for line in gitignore.read_text(encoding="utf-8").splitlines():
-        line = line.rstrip()
-        if not line or line.startswith("#"):
-            continue
-        negated = line.startswith("!")
-        if negated:
-            line = line[1:]
-        patterns.append(GitignorePattern(line, negated))
-    return patterns
+class GitignoreMatcher:
+    def __init__(self, patterns: list[GitignorePattern]):
+        self.patterns: list[GitignorePattern] = patterns
 
+    @classmethod
+    def from_gitignore(cls, path: str | os.PathLike[str] | None = None) -> Self:
+        if path is None:
+            path = Path.cwd()
+        gitignore = Path(path) / ".gitignore"
+        if not gitignore.exists():
+            return cls([])
 
-def _gitignore_matches(posix_path: str, pattern: str, *, is_dir: bool = False) -> bool:
-    """Return True if posix_path matches the given gitignore pattern."""
-    dir_only = pattern.endswith("/")
-    if dir_only:
-        if not is_dir:
+        patterns: list[GitignorePattern] = []
+        for line in gitignore.read_text(encoding="utf-8").splitlines():
+            line = line.rstrip()
+            if not line or line.startswith("#"):
+                continue
+            negated = line.startswith("!")
+            if negated:
+                line = line[1:]
+            patterns.append(GitignorePattern(line, negated))
+        return cls(patterns)
+
+    def ignored(self, path: str | os.PathLike[str]) -> bool:
+        """Check if a path is ignored based on the patterns in this .gitignore file."""
+        if not self.patterns:
             return False
-        pattern = pattern[:-1]
 
-    if not pattern:
-        return False
+        pathlib_path = Path(path)
+        ignored: bool = False
+        for pattern, negated in self.patterns:
+            dir_only = pattern.endswith("/")
+            if dir_only:
+                if not pathlib_path.is_dir():
+                    continue
+                pattern = pattern[:-1]
 
-    # No slash in pattern: match against basename only (any depth)
-    if "/" not in pattern.lstrip("/"):
-        name = posix_path.rsplit("/", 1)[-1] if "/" in posix_path else posix_path
-        return fnmatch.fnmatch(name, pattern)
+            # No slash in pattern: match against basename only (any depth)
+            pat = pattern.lstrip("/")
+            if "/" not in pat:
+                match = fnmatch.fnmatch(pathlib_path.name, pattern)
+            else:
+                # Pattern with slash: match against the full path from root
+                posix_path = pathlib_path.as_posix()
+                match = fnmatch.fnmatch(posix_path, pat) or fnmatch.fnmatch(posix_path, "*/" + pat)
 
-    # Pattern with slash: match against the full path from root
-    pat = pattern.lstrip("/")
-    return fnmatch.fnmatch(posix_path, pat) or fnmatch.fnmatch(posix_path, "*/" + pat)
+            if match:
+                ignored = not negated
 
+        return ignored
 
-def _is_gitignored(
-    posix_path: str, patterns: list[GitignorePattern], *, is_dir: bool = False
-) -> bool:
-    """Return True if posix_path is excluded by the given gitignore patterns."""
-    ignored = False
-    for entry in patterns:
-        if _gitignore_matches(posix_path, entry.pattern, is_dir=is_dir):
-            ignored = not entry.negated
-    return ignored
+    def match_files(self, path: str | os.PathLike[str]) -> Iterable[Path]:
+        path = Path(path).resolve()
 
+        for sdirpath, dirnames, filenames in os.walk(path):
+            dirpath = Path(sdirpath)
+            rel_dir = dirpath.relative_to(Path.cwd())
 
-def collect_src_files(src_dir: Path) -> Iterator[tuple[Path, Path]]:
-    """Yield ``(archive_path, disk_path)`` for all non-gitignored files under src_dir.
+            # Prune ignored directories in-place so os.walk skips their subtrees
+            dirnames[:] = [d for d in dirnames if not self.ignored(Path(d).resolve())]
 
-    ``archive_path`` is relative to src_dir (e.g. ``hello/__init__.py``).
-    ``disk_path`` is the absolute path on disk.
-
-    .gitignore patterns are loaded from the current working directory.
-    """
-    cwd = Path.cwd()
-    src_dir = src_dir if src_dir.is_absolute() else cwd / src_dir
-    patterns = _load_gitignore_patterns(cwd)
-
-    for dirpath_str, dirnames, filenames in os.walk(src_dir):
-        dirpath = Path(dirpath_str)
-        rel_dir = dirpath.relative_to(cwd)
-
-        # Prune ignored directories in-place so os.walk skips their subtrees
-        dirnames[:] = [
-            d
-            for d in dirnames
-            if not _is_gitignored((rel_dir / d).as_posix(), patterns, is_dir=True)
-        ]
-
-        for fname in filenames:
-            rel_file = rel_dir / fname
-            if not _is_gitignored(rel_file.as_posix(), patterns):
-                yield dirpath.relative_to(src_dir) / fname, dirpath / fname
+            for fname in filenames:
+                rel_file = rel_dir / fname
+                if not self.ignored(rel_file):
+                    yield rel_file
 
 
 def to_snakecase(s: str) -> str:
@@ -150,9 +139,9 @@ def guess_minimum_macver(settings: HanzoSettings, arch: str) -> str:
 
 
 __all__ = [
+    "GitignoreMatcher",
     "GitignorePattern",
     "calculate_wheel_tag",
-    "collect_src_files",
     "guess_minimum_macver",
     "to_snakecase",
 ]
