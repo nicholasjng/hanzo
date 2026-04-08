@@ -42,6 +42,7 @@ select = ["E", "F", "I", "S", "W", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/hanzo/rules.py" = ["E501"]  # line overruns in rule definitions.
+"tests/**/*.py" = ["S"]  # asserts in test cases.
 
 [tool.pyrefly]
 #### configuring what to type check and where to import from
