@@ -25,21 +25,37 @@ class CcRuleTypes(StrEnum):
     ASM = "asm"
 
 
+# Parses a platform key into named groups that mirror the Platform fields.
+# os_version is distinguished from arch by requiring digits at the start.
+_PLATFORM_RE = re.compile(
+    r"(?P<system>[a-z]+)(?:-(?P<os_version>\d[\d.]*))?(?:-(?P<arch>[a-z][a-z0-9_]*))?$",
+    flags=re.IGNORECASE,
+)
+
+
 def _match_platform_dict(
     platform_map: dict[str, list[str]],
     platform: Platform,
 ) -> list:
     """Return the concatenated lists from *platform_map* whose keys match *platform*.
 
-    Each key is treated as a case-insensitive regex matched against
-    ``platform.system``.  For example the key ``"macos"`` matches
-    ``platform.system == "macosx"``.
+    Keys are parsed with ``_PLATFORM_KEY_RE`` into ``system``, ``os_version``,
+    and ``arch`` groups.  The ``system`` group is matched as a case-insensitive
+    regex (e.g. ``"macos"`` matches ``platform.system == "macosx"``).  When an
+    ``arch`` group is captured (e.g. ``"macosx-x86_64"``), the architecture must
+    also match exactly; keys without an arch component match any architecture.
     """
-    system = platform.system.lower()
     result: list = []
     for key, values in platform_map.items():
-        if re.match(key.lower(), system):
-            result.extend(values)
+        m = _PLATFORM_RE.match(key.lower())
+        if m is None:
+            continue
+        if not re.match(m.group("system"), platform.system.lower()):
+            continue
+        key_arch = m.group("arch")
+        if key_arch is not None and key_arch != platform.arch.lower():
+            continue
+        result.extend(values)
     return result
 
 
@@ -111,12 +127,15 @@ class Target:
     def add_feature(self, feature: Feature) -> None: ...
 
     @classmethod
-    def from_toml(cls, toml: dict[str, Any], config: BuildConfig) -> Self: ...
+    def from_toml(cls, toml: dict[str, Any], config: BuildConfig) -> Self:
+        raise NotImplementedError
 
     @property
-    def rules(self) -> Mapping[str, Rule]: ...
+    def rules(self) -> Mapping[str, Rule]:
+        raise NotImplementedError
 
-    def build_outputs(self) -> list[dict]: ...  # TODO: Make this typing more precise
+    def build_outputs(self) -> list[dict]:  # TODO: Make this typing more precise
+        raise NotImplementedError
 
 
 class CCLibraryTarget(Target):
