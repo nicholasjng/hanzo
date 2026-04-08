@@ -79,11 +79,7 @@ class GitignoreMatcher:
             rel_dir = dirpath.relative_to(Path.cwd())
 
             # Prune ignored directories in-place so os.walk skips their subtrees
-            dirnames[:] = [
-                d
-                for d in dirnames
-                if not self.ignored(Path(d).resolve())
-            ]
+            dirnames[:] = [d for d in dirnames if not self.ignored(Path(d).resolve())]
 
             for fname in filenames:
                 rel_file = rel_dir / fname

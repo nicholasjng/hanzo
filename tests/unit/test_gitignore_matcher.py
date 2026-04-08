@@ -1,6 +1,5 @@
 """Unit tests for the GitignoreMatcher in hanzo.utils, responsible for writing files to the wheel."""
 
-
 from hanzo.utils import GitignoreMatcher, GitignorePattern
 
 
