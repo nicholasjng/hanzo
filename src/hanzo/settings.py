@@ -12,6 +12,7 @@ from hanzo.constants import (
     DEFAULT_BUILD_DIR,
     DEFAULT_CC_TOOLCHAIN_NAME,
     DEFAULT_PY_TOOLCHAIN_NAME,
+    DEFAULT_SOURCE_DIR,
     DEFAULT_SOURCE_EXTENSIONS,
     METADATA_VERSION,
 )
@@ -31,6 +32,10 @@ if TYPE_CHECKING:
 _build_graph: dict[str, "Target"] = {}
 
 
+class SettingsError(Exception):
+    """Raised when an error occurs in Hanzo settings instantiation."""
+
+
 def get_build_graph() -> Mapping[str, "Target"]:
     return MappingProxyType(_build_graph)
 
@@ -48,7 +53,8 @@ def ensure_scalar_setting(
 def ensure_scalar_setting(
     settings: dict[str, str | list[str]], key: str, default: str | None = None
 ) -> str | None:
-    """Return a scalar value for a given key in PEP517 config settings."""
+    """Return a scalar value (with optional default) for a given key in PEP517 config settings.
+    Raises a ValueError if a list of values is given."""
     val = settings.get(key, default)
     if isinstance(val, list):
         raise ValueError(f"got multiple values for {key!r}")
@@ -65,12 +71,20 @@ class WheelSettings:
     stable_abi: str | None = None
     sources: frozenset[str] = field(default_factory=lambda: DEFAULT_SOURCE_EXTENSIONS)
     data: frozenset[str] = field(default_factory=frozenset)
+    package_dir: Path = field(default_factory=lambda: Path(DEFAULT_SOURCE_DIR))
+    packages: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         if not isinstance(self.sources, frozenset):
             self.sources = frozenset(self.sources)
         if not isinstance(self.data, frozenset):
             self.data = frozenset(self.data)
+        if not self.package_dir.exists():
+            raise SettingsError(f"package directory {self.package_dir} does not exist")
+        if not self.package_dir.is_dir():
+            raise SettingsError(f"not a directory: {self.package_dir}")
+        if not isinstance(self.packages, frozenset):
+            self.packages = frozenset(self.packages)
 
 
 @dataclass
