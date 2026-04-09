@@ -524,12 +524,12 @@ class WheelWriter:
 
     def write_data_file(
         self,
-        filename: str,
+        filename: str | PathLike[str],
         contents: bytes | str | PathLike[str] | IO[bytes],
         *,
         timestamp: datetime = _default_timestamp,
     ) -> None:
-        archive_path = self._data_dir + "/" + filename.strip("/")
+        archive_path = self._data_dir + "/" + str(filename).strip("/")
         self.write_file(archive_path, contents, timestamp=timestamp)
 
     def write_distinfo_file(
