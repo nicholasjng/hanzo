@@ -37,7 +37,7 @@ def build_wheel(
     config.add_builtin_features(settings)
 
     wheel_directory = Path(wheel_directory)
-    (build_dir := Path.cwd() / BUILD_DIRNAME).mkdir(exist_ok=True)
+    (build_dir := Path.cwd() / config.build_dir).mkdir(exist_ok=True)
 
     ext_modules = load_extensions(config)
     root_is_purelib = not ext_modules
@@ -134,13 +134,15 @@ def build_sdist(
 def get_requires_for_build_wheel(
     config_settings: dict[str, str | list[str]] | None = None,
 ) -> list[str]:
-    return []
+    pyproject = parse_pyproject()
+    return pyproject.get("build-system", {}).get("requires", [])
 
 
 def get_requires_for_build_sdist(
     config_settings: dict[str, str | list[str]] | None = None,
 ) -> list[str]:
-    return []
+    pyproject = parse_pyproject()
+    return pyproject.get("build-system", {}).get("requires", [])
 
 
 def prepare_metadata_for_build_wheel(
@@ -172,7 +174,7 @@ def build_editable(
     config.add_builtin_features(settings)
 
     wheel_directory = Path(wheel_directory)
-    (build_dir := Path.cwd() / BUILD_DIRNAME).mkdir(exist_ok=True)
+    (build_dir := Path.cwd() / config.build_dir).mkdir(exist_ok=True)
 
     ext_modules = load_extensions(config)
     root_is_purelib = not ext_modules
