@@ -28,11 +28,8 @@ includes = [
     "@python.include",
 ]
 features = ["stable-abi"]
-flags = [
-    "-fPIC",
-    "-fvisibility=hidden",
-    "-fno-strict-aliasing",
-]
+flags.macos = ["-fPIC", "-fvisibility=hidden", "-fno-strict-aliasing"]
+flags.linux = ["-fPIC", "-fvisibility=hidden", "-fno-strict-aliasing", "-ffunction-sections", "-fdata-sections"]
 linkflags.macos = [
     "-bundle",
     "-Wl,-headerpad_max_install_names",
@@ -41,7 +38,7 @@ linkflags.macos = [
     "-Wl,-x",
     "-Wl,-S",
 ]
-linkflags.linux = ["-Wl,-s", "-Wl,--gc-sections"]
+linkflags.linux = ["-shared", "-Wl,--gc-sections", "-Wl,-s"]
 
 [tool.hanzo.targets.hello_ext]
 type = "cc-extension"
