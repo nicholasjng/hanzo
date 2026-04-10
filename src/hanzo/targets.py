@@ -164,6 +164,8 @@ class CCLibraryTarget(Target):
 
         self._libname = libname
 
+        self._added_features: set[str] = set()
+
     @cached_property
     def libname(self) -> str:
         if self._libname is not None:
@@ -171,6 +173,10 @@ class CCLibraryTarget(Target):
         else:
             suffix = ".a" if self.linkmode == "static" else ".so"
             return "lib" + self.name + suffix
+
+    @property
+    def features(self) -> set[str]:
+        return self._added_features
 
     @property
     def headers(self) -> list[Include]:
@@ -249,16 +255,22 @@ class CCLibraryTarget(Target):
         if isinstance(dep, CCLibraryTarget):
             self._dependencies.append(dep)
 
-            self.includes += dep.headers
-            self.defines += [_d for _d in dep.defines if not _d.local]
-            self.linkflags += dep.linkflags
-            self.flags += dep.flags
+            # TODO: This will perform poorly for large flagsets
+            self.includes += [h for h in dep.headers if h not in self.includes]
+            self.defines += [_d for _d in dep.defines if not _d.local and _d not in self.defines]
+            self.linkflags += [f for f in dep.linkflags if f not in self.linkflags]
+            self.flags += [f for f in dep.flags if f not in self.flags]
 
     def add_feature(self, feature: Feature) -> None:
+        if feature.name in self._added_features:
+            print(f"Feature {feature.name!r} already added")
+            return
+
         if isinstance(feature, CcFeature):
-            self.flags += feature.flags
-            self.linkflags += feature.linkflags
-            self.defines += feature.defines
+            self._added_features.add(feature.name)
+            self.flags += [f for f in feature.flags if f not in self.flags]
+            self.linkflags += [f for f in feature.linkflags if f not in self.linkflags]
+            self.defines += [d for d in feature.defines if d not in self.defines]
 
     @property
     def rules(self) -> Mapping[str, Rule]:
