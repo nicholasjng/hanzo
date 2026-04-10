@@ -154,11 +154,6 @@ CcHostToolchain = CcToolchain(
     ranlib="/usr/bin/ranlib",
 )
 
-# TODO: This is not portable to Windows
-PythonHostToolchain = PythonToolchain(
-    name="host",
-    executable="/usr/bin/python3",
-)
 PythonCurrentInterpreterToolchain = PythonToolchain.current()
 
 
