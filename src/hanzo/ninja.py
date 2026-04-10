@@ -28,8 +28,6 @@ import textwrap
 from io import TextIOWrapper
 from pathlib import Path
 
-from hanzo.rules import Rule
-
 
 def get_ninja_executable() -> str:
     import ninja as ninja_distro
@@ -56,7 +54,7 @@ def build(build_dir: str | os.PathLike[str]) -> None:
     subprocess.check_call([ninja_exe, "-C", str(build_dir)], shell=False)  # noqa: S603
 
 
-def write_compilation_database(build_dir: str | os.PathLike[str], ruleset: set[Rule]) -> None:
+def write_compilation_database(build_dir: str | os.PathLike[str], ruleset: set[str]) -> None:
     ninja_exe = get_ninja_executable()
 
     build_dir = Path(build_dir)
@@ -66,9 +64,8 @@ def write_compilation_database(build_dir: str | os.PathLike[str], ruleset: set[R
 
     compdb_path = build_dir / "compile_commands.json"
     with open(compdb_path, "w") as comp_database:
-        rules = [rule.name for rule in ruleset]
         subprocess.check_call(  # noqa: S603
-            [ninja_exe, "-f", str(ninja_file), "-t", "compdb"] + rules, stdout=comp_database
+            [ninja_exe, "-f", str(ninja_file), "-t", "compdb", *ruleset], stdout=comp_database
         )
 
 
