@@ -33,14 +33,15 @@ flags = [
     "-fvisibility=hidden",
     "-fno-strict-aliasing",
 ]
-linkflags = [
+linkflags.macos = [
     "-bundle",
     "-Wl,-headerpad_max_install_names",
     "-Wl,@@rootpath/cmake/darwin-ld-cpython.sym",
+    "-Wl,-dead_strip",
     "-Wl,-x",
     "-Wl,-S",
-    "-Wl,-dead_strip",
 ]
+linkflags.linux = ["-Wl,-s", "-Wl,--gc-sections"]
 
 [tool.hanzo.targets.hello_ext]
 type = "cc-extension"
