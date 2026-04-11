@@ -1,7 +1,7 @@
 [build-system]
-requires = ["packaging>=26.0", "pyproject-metadata>=0.10.0"]
-build-backend = 'hanzo' # TODO: Add bootstrap module to avoid requires duplication above
-backend-path = ['src']
+requires = ["packaging>=26.0"]
+build-backend = "hanzo" # TODO: Add bootstrap module to avoid requires duplication above
+backend-path = ["src"]
 
 [project]
 name = "hanzo"
@@ -13,12 +13,13 @@ license = "Apache-2.0"
 
 requires-python = ">=3.11"
 dependencies = [
-    "ninja>=1.10.0",
     "packaging>=26.0",
-    "pyproject-metadata>=0.10.0",
 ]
 
 [dependency-groups]
+ninja = [
+    "ninja>=1.13.0",
+]
 tests = [
     "build>=1.4.0",
     "pytest>=9.0.2",
@@ -33,7 +34,7 @@ zed = [
 src = ["src"]
 line-length = 100
 target-version = "py311"
-exclude = ["tests/projects/**"]
+exclude = ["tests/projects/**", "src/hanzo/vendor/**"]
 
 [tool.ruff.lint]
 # Enable pycodestyle errors & warnings (`E`, `W`), bandit (`S`), Pyflakes (`F`),
@@ -47,4 +48,4 @@ ignore = ["E203", "E501"]
 
 [tool.pyrefly]
 #### configuring what to type check and where to import from
-project-excludes = ["tests/projects/**"]
+project-excludes = ["tests/projects/**", "src/hanzo/vendor/**"]

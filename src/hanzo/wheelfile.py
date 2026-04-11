@@ -41,9 +41,9 @@ from packaging.utils import (
     parse_wheel_filename,
 )
 from packaging.version import Version
-from pyproject_metadata import StandardMetadata
 
 from hanzo.utils import to_snakecase
+from hanzo.vendor.pyproject_metadata import StandardMetadata
 
 _exclude_filenames = ("RECORD", "RECORD.jws", "RECORD.p7s")
 _default_timestamp = datetime(1980, 1, 1, tzinfo=UTC)

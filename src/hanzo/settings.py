@@ -25,6 +25,7 @@ from hanzo.toolchains import (
     get_toolchain,
 )
 from hanzo.utils import to_snakecase
+from hanzo.vendor.pyproject_metadata import StandardMetadata
 
 if TYPE_CHECKING:
     from hanzo.targets import Target
