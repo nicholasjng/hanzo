@@ -1,18 +1,17 @@
 import functools
+import os
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Self, overload
 
-from pyproject_metadata import StandardMetadata
-
 from hanzo.constants import (
     DEFAULT_BUILD_DIR,
     DEFAULT_CC_TOOLCHAIN_NAME,
+    DEFAULT_PACKAGE_DIRS,
     DEFAULT_PY_TOOLCHAIN_NAME,
-    DEFAULT_SOURCE_DIR,
     DEFAULT_SOURCE_EXTENSIONS,
     METADATA_VERSION,
 )
@@ -35,6 +34,28 @@ _build_graph: dict[str, "Target"] = {}
 
 class SettingsError(Exception):
     """Raised when an error occurs in Hanzo settings instantiation."""
+
+
+def _is_package(path: str | os.PathLike[str]) -> bool:
+    package_path = Path(path)
+    if not package_path.is_dir():
+        return False
+    return (package_path / "__init__.py").exists()
+
+
+def _collect_packages(names: Iterable[str] | None = None) -> dict[str, Path]:
+    package_map: dict[str, Path] = {}
+
+    def _matching_package(p: Path) -> bool:
+        if names:
+            return _is_package(p) and p.name in names
+        return _is_package(p)
+
+    for pkg_dir in DEFAULT_PACKAGE_DIRS:
+        for pkg_path in filter(_matching_package, Path(pkg_dir).iterdir()):
+            package_map[pkg_path.name] = pkg_path
+
+    return package_map
 
 
 def get_build_graph() -> Mapping[str, "Target"]:
@@ -72,20 +93,23 @@ class WheelSettings:
     stable_abi: str | None = None
     sources: frozenset[str] = field(default_factory=lambda: DEFAULT_SOURCE_EXTENSIONS)
     data: frozenset[str] = field(default_factory=frozenset)
-    package_dir: Path = field(default_factory=lambda: Path(DEFAULT_SOURCE_DIR))
-    packages: frozenset[str] = field(default_factory=frozenset)
+    packages: dict[str, Path] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.sources, frozenset):
             self.sources = frozenset(self.sources)
         if not isinstance(self.data, frozenset):
             self.data = frozenset(self.data)
-        if not self.package_dir.exists():
-            raise SettingsError(f"package directory {self.package_dir} does not exist")
-        if not self.package_dir.is_dir():
-            raise SettingsError(f"not a directory: {self.package_dir}")
-        if not isinstance(self.packages, frozenset):
-            self.packages = frozenset(self.packages)
+        if isinstance(self.packages, dict):
+            if not self.packages:
+                self.packages = _collect_packages()
+            else:
+                self.packages = {k: Path(v) for k, v in self.packages.items()}
+        elif isinstance(self.packages, list):
+            self.packages = _collect_packages(self.packages)
+        else:
+            type_name = type(self.packages).__name__
+            raise ValueError(f"wheel.packages must be a dict or list, got {type_name!r}")
 
 
 @dataclass

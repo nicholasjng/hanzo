@@ -111,29 +111,27 @@ def build_wheel(
     with WheelWriter(
         wheel_file, generator=f"hanzo {__version__}", root_is_purelib=root_is_purelib
     ) as wheel:
-        package_path = settings.wheel.package_dir
-        packages = find_packages(package_path)
         # step 1: create dist-info dir, write metadata into it.
         # TODO: Move into prepare_metadata
         wheel.write_metadata(metadata)
+        package_map = settings.wheel.packages
 
         matcher = GitignoreMatcher.from_gitignore()
-        for file in matcher.match_files(package_path):
-            rel_file = file.relative_to(package_path)
-            file_pkg = rel_file.parts[0]
-            if file_pkg not in packages:
-                continue
-            if file.suffix in settings.wheel.sources:
-                wheel.write_file(rel_file, file, timestamp=datetime.now())
-            elif file.suffix in settings.wheel.data:
-                wheel.write_data_file(rel_file, file, timestamp=datetime.now())
+        for pkg_name, pkg_path in package_map.items():
+            for file in matcher.match_files(pkg_path):
+                # last part of package path equals the package name.
+                rel_file = file.relative_to(pkg_path)
+                if file.suffix in settings.wheel.sources:
+                    wheel.write_file(pkg_name / rel_file, file, timestamp=datetime.now())
+                elif file.suffix in settings.wheel.data:
+                    wheel.write_data_file(pkg_name / rel_file, file, timestamp=datetime.now())
 
         for file in build_dir.iterdir():
             # TODO: Refine this based on the expected kinds of build artifacts,
             # optimally from settings.
             # TODO: Support multiple packages.
             if file.suffix == ".so":
-                (pkg,) = packages
+                (pkg,) = package_map.keys()
                 wheel.write_file(Path(pkg) / file.name, build_dir / file, timestamp=datetime.now())
 
     return wheel_file.name
@@ -252,22 +250,20 @@ def build_editable(
     with WheelWriter(
         wheel_file, generator=f"hanzo {__version__}", root_is_purelib=root_is_purelib
     ) as wheel:
-        package_path = Path(settings.wheel.package_dir.name)
         # step 1: create dist-info dir, write metadata into it.
         # TODO: Move into prepare_metadata
         wheel.write_metadata(metadata)
-
-        package_dir = settings.wheel.package_dir
-        pth_filename = f"_{project_name}.pth"
-        wheel.write_file(pth_filename, str(package_dir))
+        package_map = settings.wheel.packages
+        for pkg_name, pkg_path in package_map.items():
+            pth_filename = f"_{pkg_name}.pth"
+            # install path must be absolute.
+            wheel.write_file(pth_filename, str(pkg_path.parent.resolve()))
 
         for file in build_dir.iterdir():
-            # TODO: Refine this based on the expected kinds of build artifacts,
-            # optimally from settings.
+            # TODO: Include all expected kinds of build artifacts, optimally from settings.
             if file.suffix == ".so":
-                wheel.write_file(
-                    package_path / file.name, build_dir / file, timestamp=datetime.now()
-                )
+                (pkg,) = package_map.keys()
+                wheel.write_file(Path(pkg) / file.name, build_dir / file, timestamp=datetime.now())
 
     return wheel_file.name
 
