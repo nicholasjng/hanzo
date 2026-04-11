@@ -50,7 +50,12 @@ def _match_platform_dict(
         m = _PLATFORM_RE.match(key.lower())
         if m is None:
             continue
-        if not re.match(m.group("system"), platform.system.lower()):
+        key_system = m.group("system")
+        system = platform.system.lower()
+        if key_system == "unix":
+            if system not in ("linux", "macosx"):
+                continue
+        elif not re.match(key_system, system):
             continue
         key_arch = m.group("arch")
         if key_arch is not None and key_arch != platform.arch.lower():
@@ -321,6 +326,17 @@ class CCLibraryTarget(Target):
             ("restat", "1"),
         ]
         if not linkstatic:
+            platform = self.config.platform
+            if platform.system == "linux":
+                if "-shared" not in self.linkflags:
+                    self.linkflags.insert(0, "-shared")
+            elif platform.system == "macosx":
+                for flag in reversed(("-bundle", "-Wl,-headerpad_max_install_names")):
+                    if flag not in self.linkflags:
+                        self.linkflags.insert(0, flag)
+
+                # only add -arch flag on macOS.
+                variables.append(("archflags", ["-arch", platform.arch]))
             variables.append(("linkflags", self.linkflags))
             variables.append(("link_libraries", libnames))
 

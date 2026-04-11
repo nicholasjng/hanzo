@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sysconfig
 from dataclasses import dataclass
 
@@ -27,6 +28,13 @@ class Platform:
             os_version = None
         else:
             raise ValueError(f"invalid platform string: {s!r}")
+
+        # prefer MACOSX_DEPLOYMENT_TARGET over actual macOS version.
+        if system.startswith("macos"):
+            macos_deployment_target = os.getenv("MACOSX_DEPLOYMENT_TARGET")
+            if macos_deployment_target is not None:
+                os_version = macos_deployment_target
+
         return cls(system=system, os_version=os_version, arch=arch)
 
     @classmethod
