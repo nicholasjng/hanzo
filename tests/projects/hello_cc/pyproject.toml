@@ -28,17 +28,11 @@ includes = [
     "@python.include",
 ]
 features = ["stable-abi"]
-flags.macos = ["-fPIC", "-fvisibility=hidden", "-fno-strict-aliasing"]
-flags.linux = ["-fPIC", "-fvisibility=hidden", "-fno-strict-aliasing", "-ffunction-sections", "-fdata-sections"]
-linkflags.macos = [
-    "-bundle",
-    "-Wl,-headerpad_max_install_names",
-    "-Wl,@@rootpath/cmake/darwin-ld-cpython.sym",
-    "-Wl,-dead_strip",
-    "-Wl,-x",
-    "-Wl,-S",
-]
-linkflags.linux = ["-shared", "-Wl,--gc-sections", "-Wl,-s"]
+# unix == linux or macos.
+flags.unix = ["-fPIC", "-fvisibility=hidden", "-fno-strict-aliasing"]
+flags.linux = ["-ffunction-sections", "-fdata-sections"]
+linkflags.macos = ["-Wl,@@rootpath/cmake/darwin-ld-cpython.sym", "-Wl,-dead_strip", "-Wl,-x", "-Wl,-S"]
+linkflags.linux = ["-Wl,--gc-sections", "-Wl,-s"]
 
 [tool.hanzo.targets.hello_ext]
 type = "cc-extension"

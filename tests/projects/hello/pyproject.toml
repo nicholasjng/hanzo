@@ -6,6 +6,5 @@ build-backend = "hanzo"
 name = "hello"
 version = "0.1.0"
 
-
 [tool.uv.sources]
 hanzo = { path = "../../..", editable = true }
