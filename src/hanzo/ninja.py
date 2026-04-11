@@ -30,15 +30,14 @@ from pathlib import Path
 
 
 def get_ninja_executable() -> str:
-    import ninja as ninja_distro
-
     # first, get current first-in-PATH ninja...
     system_ninja: str | None = shutil.which("ninja")
     if system_ninja is not None:
         return system_ninja
 
     # ...then fall back to PyPI ninja distro's executable.
-    bin_dir = ninja_distro.BIN_DIR
+    user_scheme = sysconfig.get_preferred_scheme("user")
+    bin_dir = sysconfig.get_path("scripts", scheme=user_scheme)
     ninja_exe = "ninja" + sysconfig.get_config_var("EXE")
     return str(Path(bin_dir) / ninja_exe)
 
