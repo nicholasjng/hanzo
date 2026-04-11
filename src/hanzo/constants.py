@@ -12,5 +12,5 @@ DEFAULT_BUILD_DIR = "build"
 DEFAULT_SOURCE_EXTENSIONS: frozenset[str] = frozenset({".py", ".pyi"})
 DEFAULT_DATA_EXTENSIONS: frozenset[str] = frozenset()
 
-# default source directory
-DEFAULT_SOURCE_DIR: str = "src"
+# default source directories. Hanzo searches for packages in each of these directories.
+DEFAULT_PACKAGE_DIRS: list[str] = ["src", "."]
