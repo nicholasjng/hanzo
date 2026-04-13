@@ -85,7 +85,8 @@ def ensure_scalar_setting(
 
 @dataclass
 class SdistSettings:
-    pass
+    include: list[str] = field(default_factory=list)
+    exclude: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -1,11 +1,12 @@
 """hanzo is a build backend for modern Python based on ninja."""
 
 import os
+import tarfile
 from datetime import datetime
 from pathlib import Path
 
 import hanzo.ninja as _ninja
-from hanzo.constants import WHEEL_FILENAME
+from hanzo.constants import SDIST_FILENAME, WHEEL_FILENAME
 from hanzo.rules import Rule
 from hanzo.settings import (
     BuildConfig,
@@ -140,7 +141,38 @@ def build_wheel(
 def build_sdist(
     sdist_directory: str | os.PathLike[str],
     config_settings: dict[str, str | list[str]] | None = None,
-) -> str: ...
+) -> str:
+    metadata = parse_project_metadata()
+    settings = parse_hanzo_settings()
+    config = BuildConfig.from_settings(config_settings or {})
+    # TODO: Maybe give an option to disable builtin features
+    config.add_builtin_features(settings)
+
+    project_name = to_snakecase(metadata.name)
+
+    sdist_directory = Path(sdist_directory)
+    sdist_file = sdist_directory / SDIST_FILENAME.format(
+        name=project_name, version=metadata.version
+    )
+
+    includes, excludes = settings.sdist.include, settings.sdist.exclude
+
+    # Use custom patterns if and only if provided, otherwise fall back to .gitignore
+    if includes or excludes:
+        matcher = GitignoreMatcher()
+        # since we're ignore-matching, we need to negate the includes.
+        matcher.add_patterns("!" + pat for pat in includes)
+        matcher.add_patterns(excludes)
+    else:
+        matcher = GitignoreMatcher.from_gitignore()
+
+    with tarfile.open(sdist_file, mode="w:gz") as sdist:
+        for file in matcher.match_files(Path.cwd()):
+            if matcher.ignored(file):
+                continue
+            sdist.add(str(file), arcname=file)
+
+    return sdist_file.name
 
 
 def get_requires_for_build_wheel(
