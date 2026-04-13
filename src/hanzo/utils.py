@@ -21,8 +21,8 @@ class GitignorePattern(NamedTuple):
 
 
 class GitignoreMatcher:
-    def __init__(self, patterns: list[GitignorePattern]):
-        self.patterns: list[GitignorePattern] = patterns
+    def __init__(self, patterns: list[GitignorePattern] | None = None):
+        self.patterns: list[GitignorePattern] = patterns or []
 
     @classmethod
     def from_gitignore(cls, path: str | os.PathLike[str] | None = None) -> Self:
@@ -42,6 +42,19 @@ class GitignoreMatcher:
                 line = line[1:]
             patterns.append(GitignorePattern(line, negated))
         return cls(patterns)
+
+    def add_patterns(self, patterns: Iterable[str | GitignorePattern]) -> None:
+        for pattern in patterns:
+            self.add_pattern(pattern)
+
+    def add_pattern(self, pattern: str | GitignorePattern) -> None:
+        if isinstance(pattern, str):
+            negated = pattern.startswith("!")
+            if negated:
+                pattern = pattern[1:]
+            self.patterns.append(GitignorePattern(pattern, negated))
+        else:
+            self.patterns.append(pattern)
 
     def ignored(self, path: str | os.PathLike[str]) -> bool:
         """Check if a path is ignored based on the patterns in this .gitignore file."""

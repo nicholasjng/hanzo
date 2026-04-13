@@ -1,5 +1,6 @@
 METADATA_VERSION: str = "2.5"
 WHEEL_FILENAME = "{name}-{version}-{tag}.whl"
+SDIST_FILENAME = "{name}-{version}.tar.gz"
 
 # Default toolchain names for different languages
 DEFAULT_CC_TOOLCHAIN_NAME: str = "host"
